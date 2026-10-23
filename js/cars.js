@@ -155,6 +155,63 @@ const GLTF_M3_CREDIT = {
   url: 'https://sketchfab.com/3d-models/2021-bmw-m3-competition-a9027a26b7ee4da4b564d939b6c27559',
 };
 
+
+// ---- real model: "Ferrari F40" by Black Snow (CC BY 4.0) ----
+// Sketchfab model 52a66c41cfcd4f999fb1b1c49bf24d70, taken from the licence-tracked mirror in github.com/sceneview/sceneview (assets-v1 release,
+// catalog entry `ferrari_f40`, CC-BY-4.0). Baked with tools/bake-model.mjs (4.358 m long, nose = +x, tyres on y=0, 4 wheels = 4 tyre meshes +
+// rims/brakes that span all four wheels -> split per side and axle at load) and optimised without palette merging (material names are kept).
+// Paint is the single material 'material' (Object_9 = whole shell, Object_10 = rear clamshell + wing), cut into rear / cabin / front panels.
+const F = (...n) => n.map((i) => 'Object_' + i);
+const GLTF_F40 = {
+  url: 'assets/models/ferrari-f40.glb',
+  rotateY: 0,                                    // baked: nose already points to +x
+  hide: [],
+  paintMaterials: ['material'],
+  glassMaterials: ['F40_Glass', 'F40_Glass.001', 'F40_Window', 'F40_Window.001'],
+  lightMaterials: ['super_headlight'],
+  wheelNodes: F(37, 38, 39, 40, 30, 31, 11),     // tyres (one mesh each) + rims + brake discs/calipers (all four wheels) -> one unit per wheel
+  axleCutX: 0,
+  regionNodes: F(9, 10),
+  regionCuts: [-0.85, 0.85],
+  extras: false,                                 // the model has a real engine, floor pan and cockpit
+  assembly: {
+    region_rear: { dir: [-1, 0.45, 0], dist: 2.0, order: 10 },
+    region_cabin: { dir: [0, 1, 0], dist: 2.2, order: 20 },
+    region_front: { dir: [1, 0.4, 0], dist: 2.0, order: 30 },
+    chassis: { dir: [0, 1, 0], dist: 1.7, order: 0 },
+    engine: { dir: [-1, 0.5, 0], dist: 2.4, order: 20 },
+    interior: { dir: [0, 1, 0], dist: 1.7, order: 10 },
+    interior_small: { dir: [0, 1, 0], dist: 1.4, order: 30 },
+    chrome_trim: { dir: [0, 1, 0], dist: 0.5 },
+    front_end: { dir: [1, 0.15, 0], dist: 1.0, order: 10 },
+    rear_end: { dir: [-1, 0.15, 0], dist: 1.0, order: 20 },
+    small_trim: { dir: [0, 1, 0], dist: 0.5, order: 40 },
+  },
+  groups: {
+    chassis: F(26, 27),
+    engine: F(28, 21),
+    interior: F(15, 16, 17, 32),
+    interior_small: F(18, 19, 34, 29, 33, 41, 20, 5),
+    chrome_trim: F(12, 13, 14),
+    front_end: F(2, 4, 6, 24, 42),
+    rear_end: F(3, 7, 8),
+    small_trim: F(25, 35, 43),
+  },
+  defaultStage: 5,
+  stages: {
+    0: F(26, 27, 28, 21),                                   // floor pan, suspension, V8 + gearbox
+    1: F(37, 38, 39, 40, 30, 31, 11),                       // tyres, rims, discs, calipers
+    2: F(15, 16, 17, 32, 18, 19, 34, 29, 33, 41, 20, 5),    // seats, dash, cockpit
+    3: [...F(9, 10), ...F(22, 23, 36, 6)],                  // body panels + (black) glass
+    4: F(12, 13, 14),                                       // window frames / chrome trim
+    // 5: everything else — lights, grilles, logos
+  },
+};
+const GLTF_F40_CREDIT = {
+  text: '3D model: “Ferrari F40” by Black Snow, CC BY 4.0 (modified: repainted, staged)',
+  url: 'https://sketchfab.com/3d-models/ferrari-f40-52a66c41cfcd4f999fb1b1c49bf24d70',
+};
+
 export const CARS = {
   'carrera-4s': {
     id: 'carrera-4s',
@@ -195,28 +252,28 @@ export const CARS = {
     shape: { profile: PROFILE_911 },   // procedural fallback only (coupe silhouette) if the GLB fails to load
     credit: GLTF_M3_CREDIT,
   },
-  // Range Rover Velar HSE (L560, 2017+): NO freely downloadable, redistributable model could be found (the CC-BY Velars on Sketchfab need a
-  // logged-in download and nobody mirrors them with a licence file). The entry is a placeholder: it shows greyed-out in the selector and
-  // ?car=velar-hse falls back to the default car. To enable it: bake a GLB with tools/bake-model.mjs into assets/models/range-rover-velar.glb,
-  // add a `gltf` block like GLTF_M3 (node names -> stages), set builder: 'gltf', delete `soon`. See README "Adding the Velar".
-  'velar-hse': {
-    id: 'velar-hse',
-    soon: true,
-    garageNo: 'L560',
-    name: 'Velar HSE',
-    colorName: 'Santorini Black',
-    model: 'Range Rover Velar (2017+)',
-    watermark: 'VELAR',
-    tagline: 'Then build the Velar.',
-    color: '#15181c',
-    goal: 70000,              // ≈ Velar HSE US price (editable)
+  'f40': {
+    id: 'f40',
+    garageNo: 'F40',
+    name: 'Ferrari F40',
+    colorName: 'Rosso Corsa',
+    model: 'Ferrari F40 (1987)',
+    watermark: 'F40',
+    tagline: 'Then build the Ferrari.',
+    color: '#b30f18',
+    goal: 400000,             // ≈ F40 US launch price (editable: set `goal` here, or `?goal=` / API)
     label: 'Some revenue',
     stages: DEFAULT_STAGES,
     thresholds: SIXTHS,
-    builder: 'coupe',
-    paint: { metalness: 0.7, roughness: 0.3 },
-    shape: { profile: PROFILE_911 },
+    builder: 'gltf',
+    gltf: GLTF_F40,
+    paint: { metalness: 0.35, roughness: 0.28 },  // deep Rosso Corsa gloss
+    shape: { profile: PROFILE_911 },             // procedural fallback only if the GLB fails to load
+    credit: GLTF_F40_CREDIT,
   },
+  // Range Rover Velar HSE (L560, 2017+) is NOT included: no freely downloadable, redistributable model exists (the CC-BY Velars on Sketchfab need a
+  // logged-in download). To add it later: bake a GLB with tools/bake-model.mjs into assets/models/range-rover-velar.glb, add a `gltf` block like
+  // GLTF_M3 (node names -> stages) and a CARS entry (id 'velar-hse', goal ≈ 70000). See README "Adding the Velar".
   cayman: {
     id: 'cayman',
     hidden: true, // procedural placeholder (no free licensed Cayman GLB found) — still reachable via ?car=cayman; drop a GLB in + `builder: 'gltf'` to enable

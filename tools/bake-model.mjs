@@ -3,7 +3,7 @@
 // leftovers cleaned up (all-BLEND materials -> OPAQUE, emissive maps that just duplicate the colour maps removed).
 //   npm i @gltf-transform/cli @gltf-transform/core @gltf-transform/extensions @gltf-transform/functions draco3dgltf sharp
 //   node tools/bake-model.mjs in.gltf baked.glb 4.794 -90        # (rotY degrees: -90 if the nose points to -z, +90 if it points to +z)
-//   npx gltf-transform optimize baked.glb out.glb --compress draco --texture-compress webp --texture-size 1024 --simplify false --join false --flatten false --instance false
+//   npx gltf-transform optimize baked.glb out.glb --compress draco --texture-compress webp --texture-size 1024 --simplify false --join false --flatten false --instance false --palette false   # (--palette false keeps material names)
 // usage: node bake-model.mjs in.gltf out.glb <lengthMetres> <rotYdeg>
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';

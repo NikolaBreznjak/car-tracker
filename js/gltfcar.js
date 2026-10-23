@@ -140,6 +140,21 @@ function splitByTriangle(mesh, pred) {
   return [a.length ? mk(a) : null, b.length ? mk(b) : null];
 }
 
+// tight world-space bounds from the vertices a mesh really uses (Box3.setFromObject only transforms the 8 corners of the geometry's
+// local box, which over-estimates rotated parts by tens of cm - that put the procedural stand-ins outside the real bodywork).
+const _pv = new THREE.Vector3();
+function preciseBox(obj, out = new THREE.Box3()) {
+  out.makeEmpty();
+  obj.updateWorldMatrix(true, true);
+  obj.traverse((m) => {
+    if (!m.isMesh || !m.geometry) return;
+    const pos = m.geometry.attributes.position, idx = m.geometry.index;
+    const n = idx ? idx.count : pos.count;
+    for (let i = 0; i < n; i++) out.expandByPoint(_pv.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(m.matrixWorld));
+  });
+  return out;
+}
+
 export function buildGltfCar(cfg, renderer) {
   const g = cfg.gltf;
   const A = g.assembly || {};
@@ -236,7 +251,7 @@ export function buildGltfCar(cfg, renderer) {
       const regionName = ['rear', 'cabin', 'front'];
       const groupOf = new Map();   // optional: g.groups = { unitName: [node names] } merges many small meshes into one assembly unit (fewer draw calls, calmer build)
       for (const [gn, ns] of Object.entries(g.groups || {})) for (const n of ns) groupOf.set(clean(n), gn);
-      const worldBox = (m) => new THREE.Box3().setFromObject(m);
+      const worldBox = (m) => preciseBox(m);
       for (const o of meshes) {
         const names = [o.name, o.parent && o.parent.name, o.parent && o.parent.parent && o.parent.parent.name].map(clean);
         const srcMat = o.material;
@@ -278,11 +293,11 @@ export function buildGltfCar(cfg, renderer) {
 
       // 2. sit the tyres on the floor
       model.updateMatrixWorld(true);
-      const box = new THREE.Box3();
-      for (const p of pieces) box.expandByObject(p.mesh);
+      const box = new THREE.Box3(), pb = new THREE.Box3();
+      for (const p of pieces) box.union(preciseBox(p.mesh, pb));
       car.position.y = -box.min.y; car.updateMatrixWorld(true);
       model.updateMatrixWorld(true);
-      box.setFromObject(model); box.min.y = 0;
+      box.min.y = 0;   // (tight bounds of the visible pieces; hidden ground planes etc. are excluded)
 
       // 3. units: bounds, centre, arrival direction, delay
       for (const p of pieces) { const u = unitFor(p.key, p.stage); u.pieces.push(p); p.unit = u; }
@@ -348,7 +363,7 @@ export function buildGltfCar(cfg, renderer) {
 
       // wheel dimensions
       const wheels = [];
-      const wb = (names) => { const b = new THREE.Box3(); for (const p of pieces) if (names.includes(clean(p.node))) b.expandByObject(p.mesh); return b; };
+      const wb = (names) => { const b = new THREE.Box3(); for (const p of pieces) if (names.includes(clean(p.node))) b.union(preciseBox(p.mesh, new THREE.Box3())); return b; };
       for (const nm of (g.wheelNodes || [])) {
         const b = wb([clean(nm)]); if (b.isEmpty()) continue;
         const cx = (b.min.x + b.max.x) / 2, hz = (b.max.z - b.min.z) / 2;
@@ -460,7 +475,6 @@ export function buildGltfCar(cfg, renderer) {
 
   // ---------- procedural extras (stage 0 drivetrain, stage 2 cockpit) ----------
   function addExtras(box, carC, sizeX, makePiece) {
-    const x0 = box.min.x;
     const dark = new THREE.MeshStandardMaterial({ color: 0x1b1e24, metalness: 0.85, roughness: 0.38 });
     const alu = new THREE.MeshStandardMaterial({ color: 0x8c939c, metalness: 1, roughness: 0.32 });
     const lime = new THREE.MeshStandardMaterial({ color: 0x1a1d00, emissive: 0xc4d300, emissiveIntensity: 0.55, metalness: 0.3, roughness: 0.4 });
@@ -482,7 +496,7 @@ export function buildGltfCar(cfg, renderer) {
       for (let i = 0; i < 3; i++) add(0, 'engine' + n, C(0.06, 0.14), alu, [rx - 0.2 + i * 0.2, ry, s * 0.4], [Math.PI / 2, 0, 0]); // heads
       add(0, 'engine' + n, B(0.7, 0.04, 0.05), lime, [rx, ry + 0.12, s * 0.45]);
       add(0, 'subframe' + n, B(1.5, 0.07, 0.07), dark, [-0.4, 0.24, s * 0.56]);                   // subframe rails
-      add(0, 'exhaust' + n, C(0.035, 0.45), alu, [x0 + 0.42, 0.22, s * 0.22], [0, 0, Math.PI / 2]); // exhaust
+      // (no stand-in exhaust pipes: the model has its own tailpipes, and the stand-ins used to poke out through the rear bumper)
     }
     add(0, 'plenum', B(0.5, 0.14, 0.4), alu, [rx + 0.2, ry + 0.16, 0]);                         // intake plenum
     add(0, 'gearbox', C(0.1, 0.5), dark, [rx + 0.56, ry - 0.02, 0], [0, 0, Math.PI / 2]);        // gearbox
