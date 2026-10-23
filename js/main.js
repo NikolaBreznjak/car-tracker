@@ -3,9 +3,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CARS, DEFAULT_CAR, DEFAULT_STAGES, getCar } from './cars.js';
 import { buildCoupe } from './carbuilder.js';
+import { buildGltfCar } from './gltfcar.js';
 import { parseParams, DataSource } from './data.js';
 
-const BUILDERS = { coupe: buildCoupe };
+const BUILDERS = { coupe: buildCoupe, gltf: buildGltfCar };
 const P = parseParams();
 const $ = (id) => document.getElementById(id);
 if (P.embed) document.body.classList.add('embed');
@@ -119,18 +120,23 @@ let replay = 0;
 function loadCar() {
   if (carObj) { scene.remove(carObj); carObj.traverse((o) => { o.geometry && o.geometry.dispose(); }); }
   const b = typeof S.car.builder === 'function' ? S.car.builder : BUILDERS[S.car.builder] || buildCoupe;
-  carObj = b(S.car, renderer);
+  const mine = (carObj = b(S.car, renderer));
   scene.add(carObj);
-  // contact shadows follow this car's wheelbase / length
-  const bd = carObj.userData.bounds;
-  if (bd) {
+  const loading = $('loading'); if (loading) loading.classList.toggle('show', carObj.userData.state === 'loading');
+  // contact shadows follow this car's wheelbase / length (re-run once an async model has loaded)
+  const fitShadows = () => {
+    if (mine !== carObj) return;
+    if (loading && carObj.userData.state !== 'loading') loading.classList.remove('show');
+    const bd = carObj.userData.bounds; if (!bd) return;
     const len = bd.x1 - bd.x0; shadow.scale.set(len * 1.42, 3.3, 1); shadow.position.x = (bd.x0 + bd.x1) / 2;
     wheelShadows.clear();
     for (const w of carObj.userData.wheels) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.5), new THREE.MeshBasicMaterial({ map: wsTex, transparent: true, depthWrite: false, toneMapped: false }));
       m.rotation.x = -Math.PI / 2; m.position.set(w.x, 0.003, w.z); m.renderOrder = -1; wheelShadows.add(m);
     }
-  }
+  };
+  fitShadows();
+  carObj.userData.onReady = fitShadows;
 }
 
 let userZoomed = false;
@@ -165,7 +171,7 @@ function buildStageList() {
 }
 function buildSelector() {
   const el = $('carSelect'); el.innerHTML = '';
-  Object.values(CARS).forEach((c) => {
+  Object.values(CARS).filter((c) => !c.hidden || c.id === S.car.id).forEach((c) => {
     const b = document.createElement('button'); b.textContent = c.name; b.className = c.id === S.car.id ? 'on' : '';
     b.onclick = () => { const u = new URL(location.href); u.searchParams.set('car', c.id); history.replaceState(null, '', u); P.car = c.id; setCar(c.id); };
     el.appendChild(b);
@@ -175,6 +181,7 @@ function applyCarText() {
   const c = S.car;
   $('garageNo').textContent = c.garageNo; $('carName').textContent = c.name; $('carColor').textContent = c.colorName; $('carModel').textContent = c.model;
   $('watermark').textContent = c.watermark; $('tagline').textContent = c.tagline;
+  const cr = $('credit'); if (cr) { cr.innerHTML = ''; if (c.credit) { const a = document.createElement('a'); a.href = c.credit.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = c.credit.text; cr.appendChild(a); } }
   document.title = `${c.name} — One sale closer.`;
 }
 function setCar(id) {
@@ -288,4 +295,5 @@ ds.start().then(() => {
 });
 requestAnimationFrame(frame);
 // test hooks
-window.__ct = { scene, floor, renderer, setRaised: (v) => { S.demoPlaying = false; setTarget(v, true); }, state: S, levels };
+Object.defineProperty(window, '__car', { get: () => carObj });
+window.__ct = { scene, floor, shadow, wheelShadows, pool, ring, camera, renderer, setRaised: (v) => { S.demoPlaying = false; setTarget(v, true); }, state: S, levels };

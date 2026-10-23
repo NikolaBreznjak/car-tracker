@@ -52,13 +52,39 @@ const PROFILE_CAYMAN = {
   layout: { engineDX: 0.62, cabinDX: 0.28, ducktail: false, sideIntake: true, rearLightBar: false },
 };
 
+// ---- real model: "(FREE) Porsche 911 Carrera 4S" by Lionsharp Studios (CC BY-SA 4.0) ----
+// stages: stage index -> node names (dots in names are ignored). Meshes not listed go to `defaultStage` (5 = finishing touches).
+const GLTF_911 = {
+  url: 'assets/models/porsche-911-carrera-4s.glb',
+  rotateY: Math.PI / 2,                // model faces +z, the scene faces +x
+  hide: ['Plane'],                     // the author's ground plane with the watermark
+  hideMaterials: ['coat'],             // tint overlay shells; replaced by real clear-coat on the paint
+  paintMaterials: ['paint'],           // repainted with cfg.color + cfg.paint
+  glassMaterials: ['window'],          // black panels with the bodywork, real glass at the glass stage
+  wheelNodes: ['Cylinder000', 'Cylinder001'],
+  materialOverrides: { license: { metalness: 0, roughness: 0.55, emissiveFromMap: 0.35 } },   // number plates read as white in the dark studio
+  defaultStage: 5,
+  stages: {
+    0: ['boot', 'boot010'],                                                                         // floor pan, arch liners
+    1: ['Cylinder000', 'Cylinder001'],                                                                // wheels, tyres, discs, calipers
+    2: ['Cube002', 'underbody'],                                                                                   // seats (+ procedural dash, wheel)
+    3: ['boot008', 'boot001', 'boot002', 'boot005', 'Plane002', 'Plane003', 'Plane004', 'boot006', 'window_rear001', 'windshield', 'window_rear', 'boot004'], // panels + (black) glass
+    4: ['boot009', 'Cube001'],                                                                        // glazing trim, wipers
+    // 5: everything else — lights, grilles, badge, plates, tail-light bar
+  },
+};
+const GLTF_911_CREDIT = {
+  text: '3D model: “(FREE) Porsche 911 Carrera 4S” by Lionsharp Studios, CC BY-SA 4.0 (modified: repainted, staged)',
+  url: 'https://sketchfab.com/3d-models/free-porsche-911-carrera-4s-d01b254483794de3819786d93e0e1ebf',
+};
+
 export const CARS = {
   'carrera-4s': {
     id: 'carrera-4s',
-    garageNo: '997',
+    garageNo: '991',
     name: '911 Carrera 4S',
     colorName: 'GT Silver',
-    model: 'Porsche 997',
+    model: 'Porsche 991',
     watermark: '911',
     tagline: 'Then build the Porsche.',
     color: '#b7bcc4',
@@ -66,14 +92,17 @@ export const CARS = {
     label: 'Some revenue',
     stages: DEFAULT_STAGES,
     thresholds: SIXTHS,
-    // builder: 'coupe' = built-in procedural 911-style coupe (three.js primitives).
-    builder: 'coupe',
-    // gltf: 'models/my-car.glb',   // optional: load a glTF instead (see README)
-    paint: { metalness: 0.62, roughness: 0.34 }, // metallic silver
-    shape: { profile: PROFILE_911 }, // optional overrides: { scale:[sx,sy,sz], ... }
+    // builder: 'gltf' = real model (see `gltf` below); falls back to the procedural 'coupe' (`shape.profile`) if it fails to load.
+    builder: 'gltf',
+    gltf: GLTF_911,
+    paint: { metalness: 0.9, roughness: 0.3 }, // GT Silver metallic + clear-coat
+    shape: { profile: PROFILE_911 }, // procedural fallback body (+ `reflection: false` to skip the floor mirror)
+    credit: GLTF_911_CREDIT,
   },
   cayman: {
     id: 'cayman',
+    hidden: true, // procedural placeholder (no free licensed Cayman GLB found) — still reachable via ?car=cayman; drop a GLB in + `builder: 'gltf'` to enable
+
     garageNo: '981',
     name: 'Cayman S',
     colorName: 'Racing Yellow',

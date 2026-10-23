@@ -23,6 +23,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
 #gl:active { cursor: grabbing; }
 .watermark { position: absolute; right: 2%; top: 2%; font-size: clamp(120px, 17vw, 300px); font-weight: 800; letter-spacing: -.06em; color: rgba(255,255,255,.035); line-height: .9; pointer-events: none; user-select: none; }
+.loading { position: absolute; left: 50%; top: 48%; transform: translate(-50%,-50%); font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: var(--grey); opacity: 0; transition: opacity .3s; pointer-events: none; }
+.loading.show { opacity: 1; animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.credit { margin-top: 18px; max-width: 250px; font-size: 10px; line-height: 1.45; }
+.credit a { color: rgba(255,255,255,.34); text-decoration: none; }
+.credit a:hover { color: var(--lime); text-decoration: underline; }
 .hints { position: absolute; left: 26px; bottom: 28px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--grey); pointer-events: none; }
 .controls { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; }
 .pill { display: flex; background: #1c1c1c; border: 1px solid #2a2a2a; border-radius: 999px; padding: 4px; }
