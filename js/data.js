@@ -13,6 +13,7 @@ export function parseParams() {
     api: p.get('api'),
     demo: p.get('demo') === '1',
     embed: p.get('embed') === '1',
+    drag: p.get('drag') === '1',   // in ?embed=1 dragging is off unless ?drag=1
     poll: Math.max(3, num(p.get('poll')) || 10),
   };
 }

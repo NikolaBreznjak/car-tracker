@@ -54,10 +54,13 @@
   </main>
 
   <aside class="tracker">
-    <div class="eyebrow" id="label">SOME REVENUE</div>
-    <div class="amount" id="amount">$0</div>
+    <div class="label-row"><div class="eyebrow" id="label">SOME REVENUE</div><button class="chip" id="manual" hidden title="Return to the live value">manual — reset <span aria-hidden="true">↺</span></button></div>
+    <div class="amount-wrap">
+      <div class="amount" id="amount" tabindex="0" role="slider" aria-label="Revenue — drag or use arrow keys" aria-valuemin="0" aria-valuenow="0" aria-valuemax="164500">$0</div>
+      <div class="drag-hint" aria-hidden="true"><span>◂</span> drag <span>▸</span></div>
+    </div>
     <div class="funded"><span class="pct" id="pct">0% funded</span><span class="of" id="of">of $164,500</span></div>
-    <div class="bar"><div class="fill" id="fill"></div></div>
+    <div class="bar-hit" id="barHit" tabindex="0" role="slider" aria-label="Funding progress — click or drag" aria-valuemin="0" aria-valuenow="0" aria-valuemax="164500"><div class="bar"><div class="fill" id="fill"></div><div class="thumb" id="thumb"></div></div></div>
     <div class="togo" id="togo">$164,500 to the finish line</div>
     <div class="assembly-head"><span class="eyebrow">THE ASSEMBLY</span><span class="count" id="count">0 / 6</span></div>
     <ul class="stages" id="stages"></ul>

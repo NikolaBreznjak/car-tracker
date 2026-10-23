@@ -61,7 +61,24 @@ const GLTF_911 = {
   hideMaterials: ['coat'],             // tint overlay shells; replaced by real clear-coat on the paint
   paintMaterials: ['paint'],           // repainted with cfg.color + cfg.paint
   glassMaterials: ['window'],          // black panels with the bodywork, real glass at the glass stage
-  wheelNodes: ['Cylinder000', 'Cylinder001'],
+  wheelNodes: ['Cylinder000', 'Cylinder001'],    // one mesh per axle (both wheels) -> split per side at load
+  regionNodes: ['boot008', 'boot002', 'boot001', 'boot005', 'boot006'],   // big stage-3 body meshes -> cut into rear / cabin / front panels
+  regionCuts: [-0.8, 0.85],                       // car-space x of the two cut planes (rear | cabin | front)
+  // assembly: per unit arrival direction (car space: +x front, +y up, +z side), distance (m), order within its stage
+  // (low = lands first), optional spin (rad). Units not listed use the per-stage defaults (see js/gltfcar.js).
+  assembly: {
+    boot: { dir: [-1, 0.2, 0], dist: 2.6, order: 0 },
+    boot010: { dir: [0, 1, 0], dist: 1.3, order: 5 },
+    underbody: { dir: [0, 1, 0], dist: 1.8, order: 0 },
+    Cube002: { dir: [0, 1, 0], dist: 1.4, order: 10 },
+    region_rear: { dir: [-1, 0.45, 0], dist: 1.9, order: 10 },
+    region_cabin: { dir: [0, 1, 0], dist: 2.1, order: 20 },
+    region_front: { dir: [1, 0.4, 0], dist: 1.9, order: 30 },
+    glass_windshield: { dir: [0, 1, 0], dist: 0.8, order: 60 },
+    glass_boot004: { dir: [0, 1, 0], dist: 0.8, order: 62 },
+    glass_window_rear: { dir: [0, 1, 0], dist: 0.8, order: 64 },
+    boot009: { dir: [0, 1, 0], dist: 0.35 },
+  },
   materialOverrides: { license: { metalness: 0, roughness: 0.55, emissiveFromMap: 0.35 } },   // number plates read as white in the dark studio
   defaultStage: 5,
   stages: {

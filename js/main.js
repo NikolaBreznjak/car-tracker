@@ -21,6 +21,10 @@ const S = {
   mode: 'build',     // 'build' | 'finish' (preview)
   source: 'demo',
   demoPlaying: false,
+  liveRaised: 0,     // last value the live source (API / ?raised= / demo) reported
+  manual: false,     // the user is overriding the live value by dragging
+  manualUntil: 0,    // performance.now() ms until which live updates stay paused
+  dragging: false,
 };
 const goal = () => P.goal ?? S.goal ?? S.car.goal;
 const fmt = (n) => '$' + Math.round(n).toLocaleString('en-US');
@@ -193,11 +197,13 @@ function renderUI(force) {
   const g = goal(), shown = S.raisedShown, pct = clamp01(g > 0 ? shown / g : 0);
   const th = S.car.thresholds;
   $('amount').textContent = fmt(shown);
+  const aria = (el) => { el.setAttribute('aria-valuenow', Math.round(shown)); el.setAttribute('aria-valuemax', Math.round(g)); el.setAttribute('aria-valuetext', fmt(shown) + ', ' + Math.round(pct * 100) + '% funded'); };
+  aria($('amount')); aria($('barHit'));
   $('label').textContent = (P.label ?? S.label ?? S.car.label).toUpperCase();
   const pv = pct >= 0.9999 ? 100 : pct * 100 >= 10 ? Math.min(99, Math.round(pct * 100)) : pct === 0 ? 0 : Math.max(0.1, Math.floor(pct * 1000) / 10);
   const pctTxt = pv + '% funded';
   $('pct').textContent = pctTxt; $('of').textContent = 'of ' + fmt(g);
-  $('fill').style.width = pct * 100 + '%';
+  $('fill').style.width = pct * 100 + '%'; $('thumb').style.left = pct * 100 + '%';
   const togo = $('togo'); const done = pct >= 0.9999;
   togo.textContent = done ? 'You made it.' : fmt(Math.max(0, g - shown)) + ' to the finish line'; togo.classList.toggle('done', done);
   // stages
@@ -228,6 +234,8 @@ const ds = new DataSource(P, (st, mode) => {
   if (typeof st.goal === 'number' && st.goal > 0) S.goal = st.goal;
   if (typeof st.label === 'string') S.label = st.label;
   if (st.car && !P.car && CARS[st.car] && CARS[st.car].id !== S.car.id) setCar(st.car);
+  S.liveRaised = st.raised;                 // always remember the live value (for "reset")
+  if (manualActive()) return;               // dragging overrides polling while active and for ~15 s after
   if (st.raised !== S.raisedTarget) setTarget(st.raised, false);
 });
 
@@ -237,8 +245,9 @@ function playDemo(ms = 5200, from = 0) {
   const g = goal(), t0 = performance.now();
   const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
   const step = () => {
+    if (!S.demoPlaying) return;               // cancelled (the user took over)
     const t = clamp01((performance.now() - t0) / ms);
-    S.raisedShown = S.raisedTarget = from + (g - from) * ease(t); $('demoSlider').value = (S.raisedShown / g) * 100;
+    S.raisedShown = S.raisedTarget = S.liveRaised = from + (g - from) * ease(t); $('demoSlider').value = (S.raisedShown / g) * 100;
     if (t < 1) requestAnimationFrame(step); else S.demoPlaying = false;
   };
   step();
@@ -259,7 +268,124 @@ $('pill').querySelectorAll('button').forEach((b) => (b.onclick = () => {
 $('reset').onclick = () => {
   camera.position.copy(HOME.pos); controls.target.copy(HOME.target); controls.autoRotate = true;
   for (let i = 0; i < 6; i++) levels[i] = 0;
+  nudge.cur = { tx: HOME.target.x, ty: HOME.target.y, tz: HOME.target.z, z: 1 };
 };
+
+// ---------------- manual override: drag the amount / scrub the bar ----------------
+// Dragging never POSTs anywhere. It pauses live updates while active and for MANUAL_HOLD_MS after (API mode);
+// the "manual — reset" chip jumps back to the live value. With no API there is nothing to override, so it stays.
+const MANUAL_HOLD_MS = 15000;
+const DRAGGABLE = !P.embed || P.drag;
+const manualActive = () => S.dragging || performance.now() < S.manualUntil;
+function setManual(on) {
+  S.manual = on; $('manual').hidden = !on || !DRAGGABLE;
+  document.body.classList.toggle('is-manual', on);
+}
+function checkManualExpiry(now) {
+  if (S.manual && !S.dragging && now >= S.manualUntil) { setManual(false); if (S.liveRaised !== S.raisedTarget) setTarget(S.liveRaised, false); }
+}
+function resetManual() {
+  S.manualUntil = 0; S.dragging = false; setManual(false); setTarget(S.liveRaised, false);
+}
+// set the value directly (no tween) — used while dragging so everything follows at frame rate
+function setManualValue(v) {
+  const g = goal(); v = Math.min(g, Math.max(0, v));
+  S.demoPlaying = false; tween = null; S.raisedTarget = S.raisedShown = v;
+  const sl = $('demoSlider'); if (sl) sl.value = (v / g) * 100;
+}
+function snapStep() { // a "nice" step ≈ 1% of the goal (1k for $164.5k)
+  const raw = goal() / 100, p10 = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1)))), m = raw / p10;
+  return p10 * (m >= 5 ? 5 : m >= 2 ? 2 : 1);
+}
+function beginManual() { S.dragging = true; S.demoPlaying = false; tween = null; setManual(true); document.body.classList.add('dragging'); }
+function endManual() {
+  S.dragging = false; document.body.classList.remove('dragging');
+  S.manualUntil = performance.now() + (ds.mode === 'api' ? MANUAL_HOLD_MS : Infinity);
+}
+const PX_FULL = () => Math.min(620, Math.max(360, innerWidth * 0.34)); // pixels of drag for 0 → 100%
+
+function setupDrag() {
+  const num = $('amount'), hit = $('barHit'), bar = hit.querySelector('.bar');
+  if (!DRAGGABLE) { num.removeAttribute('tabindex'); num.removeAttribute('role'); hit.removeAttribute('tabindex'); hit.removeAttribute('role'); document.body.classList.add('no-drag'); return; }
+  $('manual').onclick = resetManual;
+  // the big number: grab it, drag horizontally (→ up) or vertically (↑ up); Shift snaps, Alt = fine
+  let st = null;
+  num.addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button > 0) return;
+    num.setPointerCapture(e.pointerId); beginManual();
+    st = { id: e.pointerId, x: e.clientX, y: e.clientY, v: S.raisedShown, fine: e.altKey };
+    e.preventDefault();
+  });
+  num.addEventListener('pointermove', (e) => {
+    if (!st || e.pointerId !== st.id) return;
+    if (e.altKey !== st.fine) { st.v = S.raisedShown; st.x = e.clientX; st.y = e.clientY; st.fine = e.altKey; } // re-anchor when toggling fine mode
+    const d = (e.clientX - st.x) + (st.y - e.clientY);
+    let v = st.v + (d / PX_FULL()) * goal() * (e.altKey ? 0.1 : 1);
+    if (e.shiftKey) { const q = snapStep(); v = Math.round(v / q) * q; }
+    setManualValue(v);
+  });
+  const up = (e) => { if (st && e.pointerId === st.id) { st = null; endManual(); } };
+  num.addEventListener('pointerup', up); num.addEventListener('pointercancel', up);
+  num.addEventListener('lostpointercapture', up);
+  // the bar: click / drag anywhere along it
+  let sb = null;
+  const fromX = (e, snap) => { const r = bar.getBoundingClientRect(); let v = ((e.clientX - r.left) / r.width) * goal(); if (snap) { const q = snapStep(); v = Math.round(v / q) * q; } setManualValue(v); };
+  hit.addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button > 0) return;
+    hit.setPointerCapture(e.pointerId); beginManual(); sb = e.pointerId; fromX(e, e.shiftKey); e.preventDefault();
+  });
+  hit.addEventListener('pointermove', (e) => { if (sb === e.pointerId) fromX(e, e.shiftKey); });
+  const upb = (e) => { if (sb === e.pointerId) { sb = null; endManual(); } };
+  hit.addEventListener('pointerup', upb); hit.addEventListener('pointercancel', upb); hit.addEventListener('lostpointercapture', upb);
+  // keyboard on either focused control
+  const keys = (e) => {
+    const q = snapStep(), small = q / 10, big = e.shiftKey ? q * 10 : q;
+    let v = S.raisedShown, hitKey = true;
+    switch (e.key) {
+      case 'ArrowRight': case 'ArrowUp': v += e.shiftKey ? q : small; break;
+      case 'ArrowLeft': case 'ArrowDown': v -= e.shiftKey ? q : small; break;
+      case 'PageUp': v += big * 5; break;
+      case 'PageDown': v -= big * 5; break;
+      case 'Home': v = 0; break;
+      case 'End': v = goal(); break;
+      default: hitKey = false;
+    }
+    if (!hitKey) return;
+    e.preventDefault();
+    S.demoPlaying = false; tween = null; setManual(true); setManualValue(v);
+    S.manualUntil = performance.now() + (ds.mode === 'api' ? MANUAL_HOLD_MS : Infinity);
+  };
+  num.addEventListener('keydown', keys); hit.addEventListener('keydown', keys);
+}
+setupDrag();
+if (DRAGGABLE) { setTimeout(() => document.querySelector('.amount-wrap').classList.add('intro'), 1800); setTimeout(() => document.querySelector('.amount-wrap').classList.remove('intro'), 5200); }
+
+// ---------------- camera nudge per stage (focus the wheels at stage 2, the cabin at 3 ...) ----------------
+// A smooth function of the continuous stage position; applied as a delta so the user's own orbit / zoom is kept.
+const nudge = { cur: { tx: HOME.target.x, ty: HOME.target.y, tz: HOME.target.z, z: 1 } };
+const NUDGE_KEYS = [
+  { tx: -0.2, ty: 0.25, tz: 0, z: 0.9 },   // 1 foundation — low, on the chassis
+  { tx: 0.05, ty: 0.32, tz: 0, z: 0.84 },  // 2 wheels
+  { tx: -0.1, ty: 0.72, tz: 0, z: 0.84 },  // 3 cabin
+  { tx: 0, ty: 0.58, tz: 0, z: 0.98 },     // 4 bodywork — pull back to see the panels land
+  { tx: 0.3, ty: 0.82, tz: 0, z: 0.88 },   // 5 glazing
+  { tx: 0, ty: 0.5, tz: 0, z: 1 },         // 6 finishing / complete
+];
+function nudgeTarget() {
+  const ps = levels[0] + levels[1] + levels[2] + levels[3] + levels[4] + levels[5];  // 0..6
+  const f = Math.min(5, Math.max(0, ps - 0.5)), i = Math.min(4, Math.floor(f)), t = f - i, e = t * t * (3 - 2 * t);
+  const a = NUDGE_KEYS[i], b = NUDGE_KEYS[i + 1], m = (k) => a[k] + (b[k] - a[k]) * e;
+  const narrow = Math.min(1, Math.max(0, (camera.aspect - 0.9) / 0.9));   // on tall/narrow screens keep the whole car in frame
+  return { tx: m('tx'), ty: m('ty'), tz: m('tz'), z: 1 - (1 - m('z')) * narrow };
+}
+function nudgeCamera(dt) {
+  const goalN = nudgeTarget(), c = nudge.cur, k = 1 - Math.exp(-dt * 5);
+  const n = { tx: c.tx + (goalN.tx - c.tx) * k, ty: c.ty + (goalN.ty - c.ty) * k, tz: c.tz + (goalN.tz - c.tz) * k, z: c.z + (goalN.z - c.z) * k };
+  controls.target.x += n.tx - c.tx; controls.target.y += n.ty - c.ty; controls.target.z += n.tz - c.tz;
+  const r = n.z / c.z;
+  if (Math.abs(r - 1) > 1e-6) { const off = camera.position.clone().sub(controls.target).multiplyScalar(r); camera.position.copy(controls.target).add(off); }
+  nudge.cur = n;
+}
 
 // ---------------- loop ----------------
 let last = performance.now();
@@ -269,14 +395,14 @@ function frame(now) {
     const t = clamp01((now - tween.t0) / tween.dur), e = 1 - Math.pow(1 - t, 3);
     S.raisedShown = tween.from + (tween.to - tween.from) * e; if (t >= 1) tween = null;
   }
+  checkManualExpiry(now);
   renderUI();
-  const k = 1 - Math.exp(-dt * 3.2);
+  // light smoothing only: every part's pose is a pure function of these levels (see gltfcar.js), so the build
+  // can be scrubbed both ways; the smoothing just takes the edge off jumps. Near-instant while dragging.
+  const k = 1 - Math.exp(-dt * (S.dragging ? 45 : 9));
   for (let i = 0; i < 6; i++) levels[i] += (levelTargets[i] - levels[i]) * k;
-  if (carObj) carObj.userData.setProgress(levels.map((v, i) => (Math.abs(v - levelTargets[i]) < 0.002 ? levelTargets[i] : v)));
-  // subtle framing: look a touch lower at the bare chassis, settle on the body line as it comes together
-  const prog = (levels[0] + levels[1] + levels[2] + levels[3] + levels[4] + levels[5]) / 6;
-  const ty = HOME.target.y - 0.1 + 0.1 * Math.min(1, prog * 1.6);
-  controls.target.y += (ty - controls.target.y) * Math.min(1, dt * 2.5);
+  if (carObj) carObj.userData.setProgress(levels.map((v, i) => (Math.abs(v - levelTargets[i]) < 0.0005 ? levelTargets[i] : v)));
+  nudgeCamera(dt);
   wheelShadows.children.forEach((m) => { m.material.opacity = Math.min(1, levels[1] * 2); }); // tyre shadows appear with the wheels
   controls.update();
   renderer.render(scene, camera);
@@ -296,4 +422,4 @@ ds.start().then(() => {
 requestAnimationFrame(frame);
 // test hooks
 Object.defineProperty(window, '__car', { get: () => carObj });
-window.__ct = { scene, floor, shadow, wheelShadows, pool, ring, camera, renderer, setRaised: (v) => { S.demoPlaying = false; setTarget(v, true); }, state: S, levels };
+window.__ct = { settle: () => { renderUI(true); levels.forEach((_, i) => (levels[i] = levelTargets[i])); }, drag: setManualValue, beginManual, endManual, resetManual, scene, floor, shadow, wheelShadows, pool, ring, camera, renderer, setRaised: (v) => { S.demoPlaying = false; setTarget(v, true); }, state: S, levels };

@@ -21,10 +21,22 @@ API_KEY=changeme node server/index.js        # http://localhost:8080  (Node 18+,
 | `?car=carrera-4s` / `cayman` | choose car config |
 | `?goal=` `?label=` | override goal / label |
 | `?demo=1` (or press **d**) | demo panel: slider, +$ buttons, play 0 → goal (~5s) |
-| `?embed=1` | hide header chrome (title, taglines, watermark, car selector) |
+| `?embed=1` | hide header chrome (title, taglines, watermark, car selector). Dragging is **off** in embeds … |
+| `?drag=1` | … unless you add this (`?embed=1&drag=1`) |
 | `?az=40&el=12&d=6` | fixed camera (azimuth/elevation/distance) – handy for screenshots |
 
 State JSON: `{ "raised": 38400, "goal": 164500, "car": "carrera-4s", "label": "Some revenue" }` (`goal`/`car`/`label` optional; `?car=` in the URL wins over the API).
+
+## Drag the amount (try it with your hands)
+
+The amount is interactive — handy for demos, and for seeing how the car looks at any revenue. Nothing is ever POSTed to the API.
+
+* **Big dollar number**: grab it and drag **right / up** to add, **left / down** to subtract (≈ a third of the screen width = 0 → 100 %). Cursor is `ew-resize`; a small `◂ drag ▸` hint shows on hover and for a few seconds after load. **Shift** while dragging snaps to a round step (~1 % of the goal, $1,000 for the 911); **Alt** = fine (10×).
+* **Progress bar**: click anywhere on it, or drag along it (a thumb appears). Shift snaps here too.
+* **Keyboard** (number or bar focused): ←/↓ −$100, →/↑ +$100, Shift+arrows ±$1,000, PageUp/PageDown ±$5,000, Home / End = 0 / goal.
+* Works with mouse, pen and touch (pointer events, `touch-action: none` on the controls). On phones the car stays pinned at the top while you drag the number below it.
+* Everything follows at frame rate: counter, % funded, bar, "to the finish line", assembly n / 6, the checklist and the 3D car. Values clamp to 0 … goal.
+* **Live data vs manual:** while dragging, and for 15 s after, API polling is paused (the latest API value is remembered) and a **manual — reset** chip appears; click it to jump back to the live value. After 15 s with an API configured, live data takes over again by itself. With no API (`?raised=` / demo) the manual value just stays until you reset.
 
 ## API (`server/index.js`)
 
@@ -98,7 +110,20 @@ gltf: {
   stages: { 0: ['floor'], 1: ['wheels_front', 'wheels_rear'], 2: ['seats'], 3: ['body'], 4: ['trim'] }, // rest → stage 5
 }
 ```
-Find node names with `console.log(__car)` in the dev console (or `gltf-transform inspect`). Un-built stages show as a lime x-ray hologram; a scan front sweeps rear → front as a stage fills. If the model fails to load, the car falls back to the procedural coupe in `shape.profile`. Credits for a model go in the car's `credit: { text, url }` (shown in the page footer).
+Find node names with `console.log(__car)` in the dev console (or `gltf-transform inspect`). Un-built stages show as a lime x-ray hologram ("blueprint"); see *Assembly sequence* below for how parts arrive. If the model fails to load, the car falls back to the procedural coupe in `shape.profile`. Credits for a model go in the car's `credit: { text, url }` (shown in the page footer).
+
+### Assembly sequence
+
+Every part's pose is a **pure function of the six stage levels** (derived from the raised amount) — there are no timers or event history, so the build can be scrubbed forwards and backwards, dragged, or jumped to any amount and always shows the right thing (`js/gltfcar.js`).
+
+* The model is grouped into **units** (a wheel, a body panel region, the seats, the front fascia, mirrors, each glass pane …). Inside a stage each unit gets its own delay (rear → front by default, or `assembly.<unit>.order`), then a local progress `u`:
+  * `u > 0` — a lime hologram of the part appears at its start offset and **flies in from its natural direction** with an ease-out-back (slight overshoot, then settle): wheels from the sides (spinning down), chassis parts from behind, seats / roof from above, bumpers & trim from outside;
+  * the real PBR material **sweeps in over the hologram** with a glowing lime front, then
+  * on **lock-in** the part's rim and cut edges flash lime and a burst of **sparks** flies off, while the static blueprint at its final place fades out.
+* The big body meshes are cut into **rear / cabin / front panels** with a clip plane in the shader (`regionNodes`, `regionCuts`), the two-wheels-in-one-mesh axles are split per side at load.
+* Glass is black with the bodywork, then turns into real glass at stage 5; lamps glow on in the last stage. **Every part has landed by 70 % of its stage**, so the car is a solid silver body with black windows at 62 % and fully finished (+ banner) at 100 %.
+* A **subtle camera nudge** per stage (low on the chassis → wheels → cabin → pull back for the panels → windshield → full car) is applied on top of your own orbit / zoom.
+* Per-car tuning in `js/cars.js` → `gltf.assembly` (`dir`, `dist`, `order`, `spin`, per unit key), `regionNodes`, `regionCuts`, `stageDefaults`. The procedural fallback car (used if the GLB fails to load, and for the Cayman) keeps its own simpler fade/settle build.
 
 ## Credits
 
@@ -113,4 +138,5 @@ Then open `?car=my-car` (or `POST /api/state {"car":"my-car"}`). To use a totall
 * The 911 is a real (CC BY-SA) 3D model of a Porsche 911 Carrera 4S (991 generation); the engine bay/dash/steering wheel you see during the build are simple procedural stand-ins because the model has no drivetrain/cockpit. The Cayman is still the stylised procedural coupe (no freely downloadable Cayman model was available — see README "Add a car" to drop in your own GLB).
 * Single-total model: one `raised` number. No per-product history UI (events are logged server-side only).
 * GitHub Pages is static: `POST` endpoints need the Node backend somewhere.
+* Assembly timing is in stage units, so cars with very uneven `thresholds` get proportionally quicker / slower flights. Sparks and holograms are cheap but add draw calls (≈ 3 per model part); on weak GPUs set `shape.reflection: false`.
 * Needs WebGL; three.js is vendored (`vendor/`, MIT) so there are no CDN dependencies.
