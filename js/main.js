@@ -31,16 +31,33 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true,
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setClearColor(0x000000, 0);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 0.92;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
+// studio environment: the stock RoomEnvironment plus long soft-boxes, so the paint gets crisp highlight lines
+function studioEnv() {
+  const env = new RoomEnvironment();
+  env.traverse((o) => { // darker room, so the soft-boxes read as crisp highlights on the paint
+    if (o.isMesh && o.material.isMeshStandardMaterial) { o.material = o.material.clone(); o.material.color.setScalar(o.material.side === THREE.BackSide ? 0.16 : 0.4); }
+  });
+  const box = new THREE.BoxGeometry();
+  const strip = (i, pos, scale) => {
+    const m = new THREE.Mesh(box, new THREE.MeshBasicMaterial({ color: new THREE.Color().setScalar(i) }));
+    m.position.set(...pos); m.scale.set(...scale); env.add(m);
+  };
+  strip(14, [0, 7, 0], [12, 0.15, 1.6]);        // long overhead strip
+  strip(9, [-9, 3.2, 4], [0.15, 1.1, 9]);       // side strips (rim highlights along the flanks)
+  strip(9, [9, 3.2, -4], [0.15, 1.1, 9]);
+  strip(6, [0, 2.6, 10], [8, 0.9, 0.15]);       // front/back kickers
+  return env;
+}
 const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.8;
+{ const e = studioEnv(); scene.environment = pmrem.fromScene(e, 0.035).texture; e.dispose(); }
+scene.environmentIntensity = 0.85;
 
 const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
-const HOME = { pos: new THREE.Vector3(3.35, 1.4, 4.1), target: new THREE.Vector3(0, 0.55, 0) };
+const HOME = { pos: new THREE.Vector3(2.8, 1.15, 3.45), target: new THREE.Vector3(0, 0.5, 0) };
 camera.position.copy(HOME.pos);
 const controls = new OrbitControls(camera, canvas);
 controls.target.copy(HOME.target);
@@ -62,22 +79,37 @@ let idleTimer = null;
 controls.addEventListener('start', () => { controls.autoRotate = false; clearTimeout(idleTimer); });
 controls.addEventListener('end', () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => (controls.autoRotate = true), 3500); });
 
-// lights: key + lime rim
-const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(4, 7, 5); scene.add(key);
-const rim = new THREE.DirectionalLight(0xc4d300, 0.3); rim.position.set(-6, 1.5, -4); scene.add(rim);
-const fill = new THREE.DirectionalLight(0x8fb4ff, 0.45); fill.position.set(-4, 2, 6); scene.add(fill);
+// lights: soft key (env does the heavy lifting) + cool fill; no coloured rim (it painted a lime stripe on the clearcoat)
+const key = new THREE.DirectionalLight(0xffffff, 1.1); key.position.set(4, 7, 5); scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb4ff, 0.35); fill.position.set(-4, 2, 6); scene.add(fill);
 
-// ground: soft contact shadow + faint ring
+// ground: faint reflective floor (mirrored car shows through it), light pool, soft contact shadow, lime ring
 function radialTex(stops, size = 256) {
   const c = document.createElement('canvas'); c.width = c.height = size;
   const g = c.getContext('2d'); const gr = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
   stops.forEach(([o, col]) => gr.addColorStop(o, col)); g.fillStyle = gr; g.fillRect(0, 0, size, size);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
-const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: radialTex([[0, 'rgba(0,0,0,.85)'], [0.45, 'rgba(0,0,0,.45)'], [1, 'rgba(0,0,0,0)']]), transparent: true, depthWrite: false }));
-shadow.rotation.x = -Math.PI / 2; shadow.scale.set(6.4, 3.2, 1); shadow.position.y = 0.002; scene.add(shadow);
-const ring = new THREE.Mesh(new THREE.RingGeometry(3.55, 3.57, 128), new THREE.MeshBasicMaterial({ color: 0xc4d300, transparent: true, opacity: 0.18, depthWrite: false }));
-ring.rotation.x = -Math.PI / 2; ring.position.y = 0.003; scene.add(ring);
+const floorMat = new THREE.MeshBasicMaterial({ map: radialTex([[0, 'rgba(22,23,23,.8)'], [0.75, 'rgba(22,23,23,.8)'], [0.92, 'rgba(22,23,23,.5)'], [1, 'rgba(22,23,23,0)']], 512), transparent: true, depthWrite: false, toneMapped: false }); // ~20% of the mirrored car shows through
+const floor = new THREE.Mesh(new THREE.CircleGeometry(10, 64), floorMat);
+floor.rotation.x = -Math.PI / 2; floor.position.y = 0.0005; floor.renderOrder = -2; scene.add(floor);
+const pool = new THREE.Mesh(new THREE.CircleGeometry(3.6, 64), new THREE.MeshBasicMaterial({ map: radialTex([[0, 'rgba(255,255,255,.075)'], [0.6, 'rgba(255,255,255,.03)'], [1, 'rgba(255,255,255,0)']], 256), transparent: true, depthWrite: false }));
+pool.rotation.x = -Math.PI / 2; pool.position.y = 0.0008; pool.renderOrder = -2; scene.add(pool);
+function shadowTex(w = 512, h = 256) { // top-down footprint: blurred body + darker blobs under each tyre
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  const blob = (cx, cy, rx, ry, a) => { g.save(); g.translate(cx, cy); g.scale(rx, ry); const gr = g.createRadialGradient(0, 0, 0, 0, 0, 1); gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(0.55, `rgba(0,0,0,${a * 0.55})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(-1, -1, 2, 2); g.restore(); };
+  blob(w / 2, h / 2, w * 0.5, h * 0.5, 0.55);
+  blob(w / 2, h / 2, w * 0.4, h * 0.36, 0.7);
+  return c;
+}
+const shadowCanvas = shadowTex();
+const shadowTexture = new THREE.CanvasTexture(shadowCanvas); shadowTexture.colorSpace = THREE.SRGBColorSpace;
+const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false, toneMapped: false }));
+shadow.rotation.x = -Math.PI / 2; shadow.scale.set(6.4, 3.3, 1); shadow.position.y = 0.002; shadow.renderOrder = -1; scene.add(shadow);
+const wheelShadows = new THREE.Group(); scene.add(wheelShadows);
+const wsTex = radialTex([[0, 'rgba(0,0,0,.8)'], [0.5, 'rgba(0,0,0,.45)'], [1, 'rgba(0,0,0,0)']], 128);
+const ring = new THREE.Mesh(new THREE.RingGeometry(3.0, 3.015, 128), new THREE.MeshBasicMaterial({ color: 0xc4d300, transparent: true, opacity: 0.18, depthWrite: false }));
+ring.rotation.x = -Math.PI / 2; ring.position.y = 0.003; ring.renderOrder = -1; scene.add(ring);
 
 let carObj = null;
 const levels = [0, 0, 0, 0, 0, 0];   // smoothed
@@ -89,20 +121,36 @@ function loadCar() {
   const b = typeof S.car.builder === 'function' ? S.car.builder : BUILDERS[S.car.builder] || buildCoupe;
   carObj = b(S.car, renderer);
   scene.add(carObj);
+  // contact shadows follow this car's wheelbase / length
+  const bd = carObj.userData.bounds;
+  if (bd) {
+    const len = bd.x1 - bd.x0; shadow.scale.set(len * 1.42, 3.3, 1); shadow.position.x = (bd.x0 + bd.x1) / 2;
+    wheelShadows.clear();
+    for (const w of carObj.userData.wheels) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.5), new THREE.MeshBasicMaterial({ map: wsTex, transparent: true, depthWrite: false, toneMapped: false }));
+      m.rotation.x = -Math.PI / 2; m.position.set(w.x, 0.003, w.z); m.renderOrder = -1; wheelShadows.add(m);
+    }
+  }
 }
 
+let userZoomed = false;
+controls.addEventListener('start', () => { userZoomed = true; });
+const FIXED_VIEW = new URLSearchParams(location.search).has('az');
 function resize() {
   const r = $('stage').getBoundingClientRect();
   const w = Math.max(10, r.width), h = Math.max(10, r.height);
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  // keep the car fully in frame on narrow viewports
-  const vfov = THREE.MathUtils.degToRad(camera.fov);
-  const needH = 6.4 / 2 / Math.tan(vfov / 2) / Math.max(0.5, Math.min(1, camera.aspect * 0.9)) ;
-  controls.minDistance = 3.4; controls.maxDistance = 14;
-  if (camera.aspect < 1.1) { const d = Math.min(14, needH * 1.0); const dir = camera.position.clone().sub(controls.target).normalize(); if (camera.position.distanceTo(controls.target) < d - 0.01 && !resize.done) camera.position.copy(controls.target).addScaledVector(dir, d); }
-  resize.done = true;
   camera.updateProjectionMatrix();
+  controls.minDistance = 3.4; controls.maxDistance = 16;
+  if (!FIXED_VIEW) {
+    // fit the car's length (~2.5 m each side of centre) inside the horizontal field of view at any aspect ratio
+    const tanH = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect;
+    const dFit = Math.min(15, Math.max(5.2, 2.5 / tanH));
+    const dir = HOME.pos.clone().sub(HOME.target).normalize();
+    HOME.pos.copy(HOME.target).addScaledVector(dir, dFit);
+    if (!userZoomed) { const cdir = camera.position.clone().sub(controls.target).normalize(); camera.position.copy(controls.target).addScaledVector(cdir, dFit); }
+  }
 }
 addEventListener('resize', resize);
 
@@ -218,6 +266,11 @@ function frame(now) {
   const k = 1 - Math.exp(-dt * 3.2);
   for (let i = 0; i < 6; i++) levels[i] += (levelTargets[i] - levels[i]) * k;
   if (carObj) carObj.userData.setProgress(levels.map((v, i) => (Math.abs(v - levelTargets[i]) < 0.002 ? levelTargets[i] : v)));
+  // subtle framing: look a touch lower at the bare chassis, settle on the body line as it comes together
+  const prog = (levels[0] + levels[1] + levels[2] + levels[3] + levels[4] + levels[5]) / 6;
+  const ty = HOME.target.y - 0.1 + 0.1 * Math.min(1, prog * 1.6);
+  controls.target.y += (ty - controls.target.y) * Math.min(1, dt * 2.5);
+  wheelShadows.children.forEach((m) => { m.material.opacity = Math.min(1, levels[1] * 2); }); // tyre shadows appear with the wheels
   controls.update();
   renderer.render(scene, camera);
   if (!window.__ready && now > 600) window.__ready = true;
@@ -235,4 +288,4 @@ ds.start().then(() => {
 });
 requestAnimationFrame(frame);
 // test hooks
-window.__ct = { setRaised: (v) => { S.demoPlaying = false; setTarget(v, true); }, state: S, levels };
+window.__ct = { scene, floor, renderer, setRaised: (v) => { S.demoPlaying = false; setTarget(v, true); }, state: S, levels };

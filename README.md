@@ -77,14 +77,16 @@ Open `js/cars.js` and add an entry:
   stages: DEFAULT_STAGES,                       // 6 names, override freely
   thresholds: [0.1, 0.25, 0.45, 0.7, 0.85, 1], // stage i completes at this fraction of goal
   builder: 'coupe',                             // built-in procedural coupe …
-  shape: { scale: [1, 0.97, 1.02] },            // … scaled (length, height, width)
+  paint: { metalness: 0.2, roughness: 0.3 },   // optional: metallic (silver) vs solid-colour gloss
+  shape: { profile: MY_PROFILE },               // … with its own silhouette (see below); optional `scale: [sx, sy, sz]`
 },
 ```
+`MY_PROFILE` is a plain object of point arrays (side-view roof/belt/underside lines, plan-view width, wheel positions, fender humps, greenhouse x-ranges, headlight, engine/cabin layout). Copy `PROFILE_911` (rear-engine, ducktail) or `PROFILE_CAYMAN` (mid-engine, dome roof, side intakes) from `js/cars.js` and tweak — a new silhouette needs no builder changes. Set `shape.reflection: false` to drop the faint floor reflection (saves ~half the triangles on weak GPUs).
 Then open `?car=my-car` (or `POST /api/state {"car":"my-car"}`). To use a totally different model, set `builder` to a function `(cfg, renderer) => THREE.Object3D` that returns an object with `userData.setProgress(levels)` where `levels` is an array of 6 numbers 0..1 (stage progress) — see `buildCoupe` in `js/carbuilder.js` for the pattern. (Loading a glTF this way means fading its meshes per stage by name.)
 
 ## Notes / limits
 
-* The car is a stylised, procedural 911-style coupe — not an exact Porsche replica (deliberately no licensed model).
+* The cars are stylised, procedural coupes (911-style and Cayman-style) — not exact Porsche replicas (deliberately no licensed model).
 * Single-total model: one `raised` number. No per-product history UI (events are logged server-side only).
 * GitHub Pages is static: `POST` endpoints need the Node backend somewhere.
 * Needs WebGL; three.js is vendored (`vendor/`, MIT) so there are no CDN dependencies.
