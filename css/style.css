@@ -1,0 +1,100 @@
+@font-face { font-family: 'Inter'; src: url('../fonts/inter.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+:root { --bg:#111; --white:#fff; --grey:#8a8a8a; --dim:#4a4a4a; --lime:#C4D300; --track:#2a2a2a; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--white); font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.eyebrow { font-size: 11px; letter-spacing: .22em; color: var(--grey); text-transform: uppercase; font-weight: 500; }
+
+#app { position: fixed; inset: 0; display: grid; grid-template-columns: minmax(230px, 19vw) 1fr minmax(340px, 27vw); grid-template-rows: auto 1fr; grid-template-areas: "top top top" "garage stage tracker"; background: radial-gradient(ellipse 60% 55% at 50% 58%, #1b1c1c 0%, #111 70%); }
+.top { grid-area: top; display: flex; justify-content: space-between; align-items: flex-start; padding: 34px 44px 0; z-index: 3; pointer-events: none; }
+.top h1 { font-size: clamp(34px, 3.4vw, 56px); font-weight: 800; letter-spacing: -.03em; margin-top: 10px; line-height: 1; }
+.top-right { text-align: right; font-size: clamp(14px, 1.2vw, 18px); font-weight: 500; line-height: 1.35; padding-top: 6px; }
+.tr-grey { color: var(--grey); }
+
+.garage { grid-area: garage; padding: 0 20px 0 44px; align-self: center; z-index: 3; }
+.garage h2 { font-size: clamp(30px, 2.9vw, 48px); font-weight: 700; letter-spacing: -.03em; line-height: 1.02; margin: 12px 0 14px; }
+.garage-sub { color: var(--grey); font-size: 14px; line-height: 1.7; }
+.car-select { display: flex; gap: 8px; margin-top: 28px; flex-wrap: wrap; }
+.car-select button { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; padding: 7px 12px; border: 1px solid #2d2d2d; border-radius: 999px; color: var(--grey); transition: all .2s; }
+.car-select button:hover { color: #fff; border-color: #555; }
+.car-select button.on { color: var(--bg); background: var(--lime); border-color: var(--lime); font-weight: 600; }
+
+.stage { grid-area: stage; position: relative; min-width: 0; min-height: 0; }
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+#gl:active { cursor: grabbing; }
+.watermark { position: absolute; right: 2%; top: 2%; font-size: clamp(120px, 17vw, 300px); font-weight: 800; letter-spacing: -.06em; color: rgba(255,255,255,.035); line-height: .9; pointer-events: none; user-select: none; }
+.hints { position: absolute; left: 26px; bottom: 28px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--grey); pointer-events: none; }
+.controls { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; }
+.pill { display: flex; background: #1c1c1c; border: 1px solid #2a2a2a; border-radius: 999px; padding: 4px; }
+.pill button { padding: 9px 20px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--grey); transition: all .25s; white-space: nowrap; }
+.pill button.on { background: #fff; color: #111; }
+.reset { width: 38px; height: 38px; border-radius: 50%; border: 1px solid #2a2a2a; background: #1c1c1c; color: var(--grey); display: grid; place-items: center; transition: all .2s; }
+.reset:hover { color: #fff; border-color: #555; transform: rotate(-90deg); }
+.leave { position: absolute; right: 24px; bottom: 32px; font-size: 11px; letter-spacing: .22em; color: var(--grey); }
+.leave.done { color: var(--lime); }
+.banner { position: absolute; left: 50%; top: 14px; transform: translate(-50%, -12px); opacity: 0; transition: all .6s cubic-bezier(.2,.8,.2,1); border: 1px solid var(--lime); color: #fff; padding: 11px 22px; border-radius: 12px; background: rgba(17,17,17,.85); font-size: 14px; font-weight: 500; display: flex; gap: 10px; align-items: center; box-shadow: 0 0 40px rgba(196,211,0,.12); pointer-events: none; white-space: nowrap; }
+.banner.show { opacity: 1; transform: translate(-50%, 0); }
+.banner .check { color: var(--lime); font-weight: 800; }
+
+.tracker { grid-area: tracker; padding: 0 44px 0 20px; align-self: center; z-index: 3; max-height: 100%; overflow: hidden; }
+.amount { font-size: clamp(44px, calc((27vw - 64px) / 4.8), 110px); font-weight: 800; letter-spacing: -.045em; line-height: 1; margin: 12px 0 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.funded { display: flex; gap: 10px; align-items: baseline; font-size: 15px; font-weight: 500; margin-bottom: 14px; }
+.funded .pct { color: var(--lime); }
+.funded .of { color: var(--grey); }
+.bar { height: 4px; background: var(--track); border-radius: 4px; overflow: hidden; }
+.fill { height: 100%; width: 0%; background: var(--lime); border-radius: 4px; box-shadow: 0 0 12px rgba(196,211,0,.5); }
+.togo { color: var(--grey); font-size: 13px; margin: 12px 0 34px; }
+.togo.done { color: #fff; font-weight: 600; }
+.assembly-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+.assembly-head .count { font-size: 12px; color: var(--grey); font-variant-numeric: tabular-nums; }
+.stages { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.stages li { display: flex; align-items: center; gap: 14px; padding: 8px 0; min-height: 44px; color: var(--dim); font-size: 16px; font-weight: 500; transition: color .4s; }
+.stages .dot { width: 22px; height: 22px; border-radius: 50%; flex: none; display: grid; place-items: center; border: 1.5px solid #3a3a3a; transition: all .4s; }
+.stages .txt { display: flex; flex-direction: column; gap: 2px; }
+.stages .sub { font-size: 12px; color: var(--lime); font-weight: 500; height: 0; opacity: 0; overflow: hidden; transition: all .3s; }
+.stages li.active { color: #fff; }
+.stages li.active .dot { border-color: var(--lime); }
+.stages li.active .dot::after { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: pulse 1.6s ease-in-out infinite; }
+.stages li.active .sub { height: 16px; opacity: 1; }
+.stages li.active .sub::after { content: ''; animation: dots 1.8s steps(4, end) infinite; }
+.stages li.done { color: var(--grey); }
+.stages li.done .dot { background: #3a3a3a; border-color: #3a3a3a; }
+.stages li.done .dot::after { content: ''; width: 9px; height: 5px; border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(-45deg) translate(1px, -1px); }
+@keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(.6); opacity: .6; } }
+@keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75%,100% { content: '...'; } }
+
+.demo { position: fixed; left: 14px; top: 118px; z-index: 10; background: rgba(24,24,24,.94); border: 1px solid #2d2d2d; border-radius: 12px; padding: 12px; width: 210px; font-size: 12px; display: flex; flex-direction: column; gap: 10px; }
+.demo[hidden] { display: none; }
+.demo-title { color: var(--grey); letter-spacing: .15em; text-transform: uppercase; font-size: 10px; }
+.demo input[type=range] { width: 100%; accent-color: var(--lime); }
+.demo-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.demo-btns button { border: 1px solid #333; border-radius: 6px; padding: 5px 8px; color: #ddd; font-size: 11px; }
+.demo-btns button:hover { border-color: var(--lime); color: var(--lime); }
+
+/* embed: hide header chrome */
+body.embed .top, body.embed .watermark, body.embed .car-select { display: none; }
+body.embed #app { grid-template-areas: "garage stage tracker"; grid-template-rows: 1fr; }
+body.embed .garage { padding-left: 28px; } body.embed .tracker { padding-right: 28px; }
+
+/* tablets & mobile: stack */
+@media (max-width: 900px) {
+  html, body { overflow: auto; }
+  #app { position: static; min-height: 100vh; display: flex; flex-direction: column; }
+  .top { padding: 22px 22px 0; }
+  .top-right { font-size: 13px; }
+  .garage { padding: 18px 22px 0; align-self: stretch; }
+  .garage h2 { font-size: 30px; margin: 8px 0 8px; }
+  .stage { height: 56vh; min-height: 340px; order: 3; }
+  .tracker { order: 4; padding: 22px 22px 40px; align-self: stretch; max-height: none; overflow: visible; }
+  .amount { font-size: clamp(52px, 17vw, 84px); }
+  .top h1 { font-size: 34px; }
+  .hints { left: 14px; bottom: 74px; }
+  .leave { right: 14px; bottom: 82px; }
+  .controls { bottom: 16px; }
+  .watermark { font-size: 36vw; }
+  .banner { font-size: 12px; padding: 9px 14px; }
+  body.embed .top { display: none; }
+  .demo { top: auto; bottom: 10px; }
+  body.embed #app { display: flex; }
+}
+@media (max-width: 900px) and (min-width: 1px) { .garage { order: 2; } .top { order: 1; } }

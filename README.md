@@ -1,0 +1,90 @@
+# car-tracker — *build the business, then build the Porsche*
+
+A dark, premium revenue tracker. The more revenue you report, the more of a 3D car is assembled — piece by piece, in 6 stages — until the finish line. Procedural three.js car (no copyrighted model), zero build step, zero-dependency Node API.
+
+**Live (frontend, demo / `?raised=` / `?api=` modes):** https://nikolabreznjak.github.io/car-tracker/
+
+## Run locally
+
+```bash
+API_KEY=changeme node server/index.js        # http://localhost:8080  (Node 18+, no npm install)
+# or just static:  python3 -m http.server     # demo + ?raised= + ?api= only
+```
+
+## URL params
+
+| param | meaning |
+|---|---|
+| `?raised=38400` | fixed amount (manual demo), no network |
+| `?api=https://host/api/state` | poll this JSON every 10s (`&poll=5` to change, min 3) |
+| *(none)* | polls `./api/state`; if unavailable → demo mode (auto-plays 0 → goal once) |
+| `?car=carrera-4s` / `cayman` | choose car config |
+| `?goal=` `?label=` | override goal / label |
+| `?demo=1` (or press **d**) | demo panel: slider, +$ buttons, play 0 → goal (~5s) |
+| `?embed=1` | hide header chrome (title, taglines, watermark, car selector) |
+| `?az=40&el=12&d=6` | fixed camera (azimuth/elevation/distance) – handy for screenshots |
+
+State JSON: `{ "raised": 38400, "goal": 164500, "car": "carrera-4s", "label": "Some revenue" }` (`goal`/`car`/`label` optional; `?car=` in the URL wins over the API).
+
+## API (`server/index.js`)
+
+Env: `API_KEY` (required for writes), `PORT` (8080), `DATA_FILE` (`./data/state.json`), `CORS_ORIGIN` (`*`), `DEFAULT_GOAL`, `DEFAULT_CAR`, `DEFAULT_LABEL`.
+
+```bash
+# read (public, CORS enabled)
+curl https://YOUR_HOST/api/state
+
+# add money (a sale!)
+curl -X POST https://YOUR_HOST/api/revenue \
+  -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+  -d '{"amount": 1500, "note": "Acme annual plan"}'
+
+# negative amount = refund
+curl -X POST https://YOUR_HOST/api/revenue -H "Authorization: Bearer $API_KEY" -d '{"amount": -200}'
+
+# set absolute values (any subset of raised, goal, car, label)
+curl -X POST https://YOUR_HOST/api/state \
+  -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+  -d '{"raised": 38400, "goal": 164500, "car": "cayman", "label": "Acme MRR"}'
+```
+Writes persist to `DATA_FILE` (with the last 200 events). Without `API_KEY` all writes return 503.
+
+## Embed in your dashboard
+
+```html
+<iframe src="https://YOUR_HOST/?embed=1&api=https://YOUR_HOST/api/state"
+        style="width:100%;height:640px;border:0;border-radius:16px" loading="lazy"></iframe>
+```
+Using the GitHub Pages frontend with your own backend: `https://nikolabreznjak.github.io/car-tracker/?embed=1&api=https://YOUR_HOST/api/state` (CORS is open). To make that the default, set `DEFAULT_API` in `js/config.js`.
+
+From your own dashboard backend, push revenue whenever it changes (e.g. nightly cron: `POST /api/state {"raised": <total MRR/revenue>}`) or on each sale (`POST /api/revenue`).
+
+## Deploy the backend + frontend together
+
+* **Render**: New → Blueprint → select this repo (`render.yaml`). `API_KEY` is generated for you (Environment tab). Free tier has an ephemeral disk (total resets on restart) — use the starter plan + disk for persistence, or just re-`POST /api/state` from your dashboard on a schedule (recommended anyway).
+* **Fly.io**: see the header of `fly.toml` (volume-backed, persistent).
+* **Docker anywhere**: `docker build -t car-tracker . && docker run -p 8080:8080 -e API_KEY=secret -v ctdata:/data car-tracker`.
+
+## Add a car
+
+Open `js/cars.js` and add an entry:
+
+```js
+'my-car': {
+  id: 'my-car', garageNo: '001', name: 'My Car', colorName: 'Midnight', model: 'Brand Model',
+  watermark: 'MC', tagline: 'Then build the dream.',
+  color: '#1c2a4a', goal: 120000, label: 'Some revenue',
+  stages: DEFAULT_STAGES,                       // 6 names, override freely
+  thresholds: [0.1, 0.25, 0.45, 0.7, 0.85, 1], // stage i completes at this fraction of goal
+  builder: 'coupe',                             // built-in procedural coupe …
+  shape: { scale: [1, 0.97, 1.02] },            // … scaled (length, height, width)
+},
+```
+Then open `?car=my-car` (or `POST /api/state {"car":"my-car"}`). To use a totally different model, set `builder` to a function `(cfg, renderer) => THREE.Object3D` that returns an object with `userData.setProgress(levels)` where `levels` is an array of 6 numbers 0..1 (stage progress) — see `buildCoupe` in `js/carbuilder.js` for the pattern. (Loading a glTF this way means fading its meshes per stage by name.)
+
+## Notes / limits
+
+* The car is a stylised, procedural 911-style coupe — not an exact Porsche replica (deliberately no licensed model).
+* Single-total model: one `raised` number. No per-product history UI (events are logged server-side only).
+* GitHub Pages is static: `POST` endpoints need the Node backend somewhere.
+* Needs WebGL; three.js is vendored (`vendor/`, MIT) so there are no CDN dependencies.

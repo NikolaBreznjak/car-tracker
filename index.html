@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>One sale closer — build the business, then build the Porsche</title>
+<meta name="description" content="A revenue tracker where a 3D car assembles itself as money comes in.">
+<meta name="theme-color" content="#111111">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23111'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23C4D300'/%3E%3C/svg%3E">
+<link rel="preload" href="./fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="./css/style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
+</script>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="top-left">
+      <div class="eyebrow">THE NEXT BIG THING</div>
+      <h1>One sale closer.</h1>
+    </div>
+    <div class="top-right">
+      <div class="tr-white">Build the business.</div>
+      <div class="tr-grey" id="tagline">Then build the Porsche.</div>
+    </div>
+  </header>
+
+  <aside class="garage">
+    <div class="eyebrow">YOUR GARAGE / <span id="garageNo">997</span></div>
+    <h2 id="carName">911 Carrera 4S</h2>
+    <div class="garage-sub" id="carColor">GT Silver</div>
+    <div class="garage-sub" id="carModel">Porsche 997</div>
+    <div class="car-select" id="carSelect" aria-label="Choose car"></div>
+  </aside>
+
+  <main class="stage" id="stage">
+    <canvas id="gl"></canvas>
+    <div class="watermark" id="watermark">911</div>
+    <div class="banner" id="banner"><span class="check">✓</span> The dream is fully funded.</div>
+    <div class="hints"><span>Drag to orbit</span><span>Scroll to zoom</span></div>
+    <div class="controls">
+      <div class="pill" id="pill" role="tablist">
+        <button class="on" data-mode="build" role="tab">You build</button>
+        <button data-mode="finish" role="tab">The finish line</button>
+      </div>
+      <button class="reset" id="reset" title="Reset view & replay assembly" aria-label="Reset">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+      </button>
+    </div>
+    <div class="leave" id="leave">LEAVE ASSEMBLY</div>
+  </main>
+
+  <aside class="tracker">
+    <div class="eyebrow" id="label">SOME REVENUE</div>
+    <div class="amount" id="amount">$0</div>
+    <div class="funded"><span class="pct" id="pct">0% funded</span><span class="of" id="of">of $164,500</span></div>
+    <div class="bar"><div class="fill" id="fill"></div></div>
+    <div class="togo" id="togo">$164,500 to the finish line</div>
+    <div class="assembly-head"><span class="eyebrow">THE ASSEMBLY</span><span class="count" id="count">0 / 6</span></div>
+    <ul class="stages" id="stages"></ul>
+  </aside>
+</div>
+
+<div class="demo" id="demo" hidden>
+  <div class="demo-title">Demo <span id="demoMode"></span></div>
+  <input type="range" id="demoSlider" min="0" max="100" step="0.1" value="0">
+  <div class="demo-btns">
+    <button data-add="1000">+$1k</button><button data-add="10000">+$10k</button><button data-add="25000">+$25k</button>
+    <button id="demoPlay">▶ play</button><button id="demoClear">0</button>
+  </div>
+</div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

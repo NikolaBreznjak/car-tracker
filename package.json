@@ -1,0 +1,9 @@
+{
+  "name": "car-tracker",
+  "version": "0.1.0",
+  "description": "Build the business, then build the Porsche: a revenue tracker where a 3D car assembles itself.",
+  "license": "MIT",
+  "private": true,
+  "engines": { "node": ">=18" },
+  "scripts": { "start": "node server/index.js", "dev": "API_KEY=dev node server/index.js" }
+}
