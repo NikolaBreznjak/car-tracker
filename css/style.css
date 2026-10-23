@@ -17,6 +17,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .car-select { display: flex; gap: 8px; margin-top: 28px; flex-wrap: wrap; }
 .car-select button { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; padding: 7px 12px; border: 1px solid #2d2d2d; border-radius: 999px; color: var(--grey); transition: all .2s; }
 .car-select button:hover { color: #fff; border-color: #555; }
+.car-select button.soon, .car-select button.soon:hover { opacity: .38; cursor: not-allowed; color: var(--grey); border-style: dashed; border-color: #2d2d2d; }
 .car-select button.on { color: var(--bg); background: var(--lime); border-color: var(--lime); font-weight: 600; }
 
 .stage { grid-area: stage; position: relative; min-width: 0; min-height: 0; }

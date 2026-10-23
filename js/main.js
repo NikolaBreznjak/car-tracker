@@ -177,6 +177,7 @@ function buildSelector() {
   const el = $('carSelect'); el.innerHTML = '';
   Object.values(CARS).filter((c) => !c.hidden || c.id === S.car.id).forEach((c) => {
     const b = document.createElement('button'); b.textContent = c.name; b.className = c.id === S.car.id ? 'on' : '';
+    if (c.soon) { b.disabled = true; b.classList.add('soon'); b.title = 'Needs a free 3D model — see README → Adding the Velar'; b.textContent = c.name + ' · soon'; el.appendChild(b); return; }
     b.onclick = () => { const u = new URL(location.href); u.searchParams.set('car', c.id); history.replaceState(null, '', u); P.car = c.id; setCar(c.id); };
     el.appendChild(b);
   });
@@ -233,7 +234,7 @@ const ds = new DataSource(P, (st, mode) => {
   if (S.demoPlaying) return;
   if (typeof st.goal === 'number' && st.goal > 0) S.goal = st.goal;
   if (typeof st.label === 'string') S.label = st.label;
-  if (st.car && !P.car && CARS[st.car] && CARS[st.car].id !== S.car.id) setCar(st.car);
+  if (st.car && !P.car && CARS[st.car] && !CARS[st.car].soon && CARS[st.car].id !== S.car.id) setCar(st.car);
   S.liveRaised = st.raised;                 // always remember the live value (for "reset")
   if (manualActive()) return;               // dragging overrides polling while active and for ~15 s after
   if (st.raised !== S.raisedTarget) setTarget(st.raised, false);

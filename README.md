@@ -1,6 +1,6 @@
 # car-tracker — *build the business, then build the Porsche*
 
-A dark, premium revenue tracker. The more revenue you report, the more of a 3D car is assembled — piece by piece, in 6 stages — until the finish line. The default car is a real Porsche 911 Carrera 4S glTF model (see Credits); the Cayman is still a procedural coupe. Zero build step, zero-dependency Node API.
+A dark, premium revenue tracker. The more revenue you report, the more of a 3D car is assembled — piece by piece, in 6 stages — until the finish line. Cars: a real Porsche 911 Carrera 4S glTF model (default) and a real BMW M3 Competition (G80, 2021) glTF model (see Credits); the Cayman is still a procedural coupe (hidden), and the Range Rover Velar HSE is a greyed-out “soon” placeholder until a licensed model can be downloaded (see *Adding the Velar*). Zero build step, zero-dependency Node API.
 
 **Live (frontend, demo / `?raised=` / `?api=` modes):** https://nikolabreznjak.github.io/car-tracker/
 
@@ -18,7 +18,7 @@ API_KEY=changeme node server/index.js        # http://localhost:8080  (Node 18+,
 | `?raised=38400` | fixed amount (manual demo), no network |
 | `?api=https://host/api/state` | poll this JSON every 10s (`&poll=5` to change, min 3) |
 | *(none)* | polls `./api/state`; if unavailable → demo mode (auto-plays 0 → goal once) |
-| `?car=carrera-4s` / `cayman` | choose car config |
+| `?car=carrera-4s` / `m3-g80` / `cayman` | choose car config (`velar-hse` is a placeholder → falls back to the default car). Goals: 911 $164,500 · M3 Competition $72,000 (≈ 2021 US base MSRP) · override with `?goal=` |
 | `?goal=` `?label=` | override goal / label |
 | `?demo=1` (or press **d**) | demo panel: slider, +$ buttons, play 0 → goal (~5s) |
 | `?embed=1` | hide header chrome (title, taglines, watermark, car selector). Dragging is **off** in embeds … |
@@ -112,6 +112,20 @@ gltf: {
 ```
 Find node names with `console.log(__car)` in the dev console (or `gltf-transform inspect`). Un-built stages show as a lime x-ray hologram ("blueprint"); see *Assembly sequence* below for how parts arrive. If the model fails to load, the car falls back to the procedural coupe in `shape.profile`. Credits for a model go in the car's `credit: { text, url }` (shown in the page footer).
 
+### Adding the Velar (Range Rover Velar HSE, L560)
+
+No Velar glTF with a redistributable licence could be downloaded without an account, so `velar-hse` in `js/cars.js` is a greyed-out placeholder (goal $70,000 ≈ Velar HSE, editable). Candidates (all need a free Sketchfab login to hit *Download 3D model → glTF*):
+
+| model | author | licence | triangles |
+|---|---|---|---|
+| [Land Rover Range Rover Velar](https://sketchfab.com/3d-models/land-rover-range-rover-velar-494c03e056674423a8ca2e2af0c01eef) | Mona x Supercars | CC BY | 26.5k |
+| [Land Rover Range Rover Velar R Dynamic](https://sketchfab.com/3d-models/land-rover-range-rover-velar-r-dynamic-189457c720584735bcc9059d14b5a3fd) | Ciiplix | CC BY | 17.4k |
+| [2018 Range Rover Velar First Edition](https://sketchfab.com/3d-models/2018-range-rover-velar-first-edition-4a6ca37f18c04bbb97e60601200c3a6b) | Nazh Design | CC BY | 4.1M (needs decimating) |
+
+Paid (no licence worries, GLB included): [88Cars3D Velar, €8](https://88cars3d.com/product/land-rover-range-rover-velar-mid-size-luxury-suv-3d-model/).
+
+Wiring it in takes a few minutes: `node tools/bake-model.mjs download/scene.gltf baked.glb 4.80 <rotY>` → `gltf-transform optimize …` (commands in the tool's header) → `assets/models/range-rover-velar.glb`, then copy the `GLTF_M3` block in `js/cars.js`, list the node names per stage (`node tools/inspect-model.mjs baked.glb` lists nodes, bboxes, materials), set `builder: 'gltf'`, drop `soon: true`, add the attribution above.
+
 ### Assembly sequence
 
 Every part's pose is a **pure function of the six stage levels** (derived from the raised amount) — there are no timers or event history, so the build can be scrubbed forwards and backwards, dragged, or jumped to any amount and always shows the right thing (`js/gltfcar.js`).
@@ -128,14 +142,15 @@ Every part's pose is a **pure function of the six stage levels** (derived from t
 ## Credits
 
 * **911 Carrera 4S model** — [“(FREE) Porsche 911 Carrera 4S”](https://sketchfab.com/3d-models/free-porsche-911-carrera-4s-d01b254483794de3819786d93e0e1ebf) by **Lionsharp Studios**, licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Source file: [playcanvas/web-components](https://github.com/playcanvas/web-components/tree/main/examples/assets/models) (`porsche-911-carrera-4s.glb`, unmodified file; repainted, hidden-ground-plane and per-stage staging happen at runtime in `js/gltfcar.js`). Because of ShareAlike, anything derived from that model file must stay under CC BY-SA 4.0.
+* **M3 Competition model** — [“2021 BMW M3 Competition”](https://sketchfab.com/3d-models/2021-bmw-m3-competition-a9027a26b7ee4da4b564d939b6c27559) (BMW G80, 415k triangles) by **supercarmodels** (Sketchfab account now shown as *DisneyCars*), licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — commercial use allowed with credit. Source file: [Holding-1-at-a-time/ai-scheduler](https://github.com/Holding-1-at-a-time/ai-scheduler/tree/main/public/2021-BMW-M3) (`scene.gltf` + textures + the author's `license.txt`, which carries the licence text above). Modified: baked to 4.794 m / nose +x with `tools/bake-model.mjs`, textures downsized to 1024 px WebP, Draco-compressed (`assets/models/bmw-m3-g80.glb`, 6 MB), number plates hidden, repainted at runtime (Isle of Man Green), split into build stages in `js/gltfcar.js`.
 * **three.js** (MIT) and its GLTFLoader / DRACOLoader, **Draco** decoder (Apache-2.0) are vendored under `vendor/`.
-* Porsche, 911, Cayman and the crest are trademarks of Dr. Ing. h.c. F. Porsche AG; this is an unofficial fan project.
+* Porsche, 911, Cayman and the crest are trademarks of Dr. Ing. h.c. F. Porsche AG; BMW and M3 are trademarks of BMW AG; Range Rover and Velar are trademarks of Jaguar Land Rover. This is an unofficial fan project.
 `MY_PROFILE` is a plain object of point arrays (side-view roof/belt/underside lines, plan-view width, wheel positions, fender humps, greenhouse x-ranges, headlight, engine/cabin layout). Copy `PROFILE_911` (rear-engine, ducktail) or `PROFILE_CAYMAN` (mid-engine, dome roof, side intakes) from `js/cars.js` and tweak — a new silhouette needs no builder changes. Set `shape.reflection: false` to drop the faint floor reflection (saves ~half the triangles on weak GPUs).
 Then open `?car=my-car` (or `POST /api/state {"car":"my-car"}`). To use a totally different model, set `builder` to a function `(cfg, renderer) => THREE.Object3D` that returns an object with `userData.setProgress(levels)` where `levels` is an array of 6 numbers 0..1 (stage progress) — see `buildCoupe` in `js/carbuilder.js` for the pattern. (Loading a glTF this way means fading its meshes per stage by name.)
 
 ## Notes / limits
 
-* The 911 is a real (CC BY-SA) 3D model of a Porsche 911 Carrera 4S (991 generation); the engine bay/dash/steering wheel you see during the build are simple procedural stand-ins because the model has no drivetrain/cockpit. The Cayman is still the stylised procedural coupe (no freely downloadable Cayman model was available — see README "Add a car" to drop in your own GLB).
+* The M3 is a real CC BY 3D model of a 2021 BMW M3 Competition (G80); the engine bay, cockpit and underbody you see during the build come from the model itself (the paint is one material split over 16 meshes, so the shell is revealed as rear / cabin / front regions). The 911 is a real (CC BY-SA) 3D model of a Porsche 911 Carrera 4S (991 generation); the engine bay/dash/steering wheel you see during the build are simple procedural stand-ins because the model has no drivetrain/cockpit. The Cayman is still the stylised procedural coupe (no freely downloadable Cayman model was available — see README "Add a car" to drop in your own GLB).
 * Single-total model: one `raised` number. No per-product history UI (events are logged server-side only).
 * GitHub Pages is static: `POST` endpoints need the Node backend somewhere.
 * Assembly timing is in stage units, so cars with very uneven `thresholds` get proportionally quicker / slower flights. Sparks and holograms are cheap but add draw calls (≈ 3 per model part); on weak GPUs set `shape.reflection: false`.

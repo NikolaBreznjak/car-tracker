@@ -234,6 +234,8 @@ export function buildGltfCar(cfg, renderer) {
       const regionNodes = new Set((g.regionNodes || []).map(clean));
       const cuts = g.regionCuts || [];   // car-space x of the cut planes, rear -> front
       const regionName = ['rear', 'cabin', 'front'];
+      const groupOf = new Map();   // optional: g.groups = { unitName: [node names] } merges many small meshes into one assembly unit (fewer draw calls, calmer build)
+      for (const [gn, ns] of Object.entries(g.groups || {})) for (const n of ns) groupOf.set(clean(n), gn);
       const worldBox = (m) => new THREE.Box3().setFromObject(m);
       for (const o of meshes) {
         const names = [o.name, o.parent && o.parent.name, o.parent && o.parent.parent && o.parent.parent.name].map(clean);
@@ -243,16 +245,22 @@ export function buildGltfCar(cfg, renderer) {
         for (const n of names) if (stageOf.has(n)) { stage = stageOf.get(n); break; }
         const isGlass = glassMats.has(srcMat.name) && (g.glassStage ?? 4) === 4 && !(g.opaqueGlassNodes || []).includes(names[1]);
         const revealStage = isGlass ? 3 : stage;
-        const node = names[1];
+        // 911-style files wrap every mesh in a named group (-> names[1]); baked single-level files have the mesh directly under the scene (-> names[0])
+        const node = o.parent === model ? names[0] : names[1];
         const base = { srcMat, stage: revealStage, glass: isGlass, node };
         if (splitNodes.has(node)) {
           const [pos, neg] = splitByTriangle(o, (c) => c.z > 0);
           const par = o.parent; par.remove(o);
-          [[pos, 'L'], [neg, 'R']].forEach(([geo, side]) => {
-            if (!geo) return;
-            const m = new THREE.Mesh(geo, srcMat); m.position.copy(o.position); m.quaternion.copy(o.quaternion); m.scale.copy(o.scale); m.name = o.name + side;
-            par.add(m); m.updateMatrixWorld(true);
-            pieces.push({ ...base, mesh: m, key: `wheel_${node.replace(/\d+$/, '')}_${side}_${node}`, wheel: side });
+          [[pos, 'L'], [neg, 'R']].forEach(([geo0, side]) => {
+            if (!geo0) return;
+            // optional: also split each side into front / rear wheel at car-space x = axleCutX (models whose parts hold all four wheels)
+            const parts = g.axleCutX === undefined ? [[geo0, null]] : (() => { const sp = { geometry: geo0, matrixWorld: o.matrixWorld, isMesh: true }; const [f, r] = splitByTriangle(sp, (c) => c.x > g.axleCutX); return [[f, 'F'], [r, 'B']]; })();
+            for (const [geo, axle] of parts) {
+              if (!geo) continue;
+              const m = new THREE.Mesh(geo, srcMat); m.position.copy(o.position); m.quaternion.copy(o.quaternion); m.scale.copy(o.scale); m.name = o.name + side + (axle || '');
+              par.add(m); m.updateMatrixWorld(true);
+              pieces.push({ ...base, mesh: m, key: axle ? `wheel_${axle}_${side}` : `wheel_${node.replace(/\d+$/, '')}_${side}_${node}`, wheel: side });
+            }
           });
         } else if (regionNodes.has(node) && !isGlass && revealStage === 3 && cuts.length) {
           const bb = worldBox(o); const par = o.parent; par.remove(o);
@@ -264,7 +272,7 @@ export function buildGltfCar(cfg, renderer) {
             pieces.push({ ...base, mesh: m, key: 'region_' + regionName[r], clip: [edges[r], edges[r + 1]] });
           }
         } else {
-          pieces.push({ ...base, mesh: o, key: isGlass ? 'glass_' + node : node });
+          pieces.push({ ...base, mesh: o, key: isGlass ? 'glass_' + node : groupOf.get(clean(node)) || node });
         }
       }
 
@@ -346,6 +354,12 @@ export function buildGltfCar(cfg, renderer) {
         const cx = (b.min.x + b.max.x) / 2, hz = (b.max.z - b.min.z) / 2;
         wheels.push({ x: cx, z: hz - 0.15 }, { x: cx, z: -(hz - 0.15) });
       }
+      if (g.axleCutX !== undefined) {   // one unit per wheel: take the shadow spots from the wheel units themselves
+        const ws = [];
+        for (const u of units) if (u.pieces[0].wheel) { const b = new THREE.Box3(); for (const p of u.pieces) b.union(worldBox(p.mesh)); ws.push({ x: (b.min.x + b.max.x) / 2, z: Math.sign((b.min.z + b.max.z) / 2) * ((b.max.z - b.min.z) / 2 + 0.05) }); }
+        if (ws.length) { wheels.length = 0; wheels.push(...ws); }
+      }
+      if (g.wheelPositions) { wheels.length = 0; wheels.push(...g.wheelPositions); }
       if (wheels.length) root.userData.wheels = wheels;
       root.userData.bounds = { x0: box.min.x, x1: box.max.x };
 
@@ -418,7 +432,7 @@ export function buildGltfCar(cfg, renderer) {
         }
         const e5 = e[5];
         for (const m of matCache.values()) {
-          if (m.isMeshPhysicalMaterial && m.userData.srcName === 'paint') { m.roughness = paintBase.roughness - 0.08 * e5; m.clearcoatRoughness = paintBase.clearcoatRoughness - 0.03 * e5; }
+          if (m.isMeshPhysicalMaterial && (g.paintMaterials || ['paint']).includes(m.userData.srcName)) { m.roughness = paintBase.roughness - 0.08 * e5; m.clearcoatRoughness = paintBase.clearcoatRoughness - 0.03 * e5; }
         }
         // lamps glow on as the finishing touches land
         for (const u of units) if (u.stage === 5) { const glow = sstep(0.6, 0.85, u.t) * 1.0 + 0.35 * sstep(0.95, 1.0, u.t); for (const p of u.pieces) if (p.mesh.material.userData.lamp) p.mesh.material.emissiveIntensity = Math.min(1.1, glow); }

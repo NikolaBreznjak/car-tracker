@@ -95,6 +95,66 @@ const GLTF_911_CREDIT = {
   url: 'https://sketchfab.com/3d-models/free-porsche-911-carrera-4s-d01b254483794de3819786d93e0e1ebf',
 };
 
+
+// ---- real model: "2021 BMW M3 Competition" (G80) by supercarmodels (CC BY 4.0) ----
+// Sketchfab export of an OBJ: meshes are called Object_N, the paint is ONE material ('Merged_materials') split over 16 meshes that do not
+// follow body panels, so the whole shell is cut into rear / cabin / front regions (regionNodes) like the 911's big meshes. The file was
+// baked (tools/bake-model.mjs): transforms applied, 4.794 m long, nose = +x, wheels on y=0, plain-opaque / emissive-free materials, Draco + WebP.
+const O = (...n) => n.map((i) => 'Object_' + i);
+const M3_PAINT = O(54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69);
+const M3_SHELL = O(3, 28, 33, 108, 109, 118, 119, 7, 14, 15, 75, 76, 121);                 // black-gloss shells / hood overlays that make up the lower body
+const GLTF_M3 = {
+  url: 'assets/models/bmw-m3-g80.glb',
+  rotateY: 0,                                    // baked: nose already points to +x
+  hide: O(42, 40),                               // front + rear number plates
+  paintMaterials: ['Merged_materials', 'Hoodpainttextured1Mtl'],
+  glassMaterials: ['Window1Mtl', 'Rearleftdoorwindow1Mtl', 'Taillightglass21Mtl_0'],   // (the front-door glass is mislabelled 'Taillightglass…_0'),
+  lightMaterials: [],
+  wheelNodes: O(114, 115, 123, 71, 72, 91, 122),     // four wheels spread over six meshes -> split per side AND per axle at load (axleCutX)
+  axleCutX: 0.1,
+  regionNodes: [...M3_PAINT, ...M3_SHELL],
+  regionCuts: [-0.75, 0.85],
+  extras: false,                                 // the model has a real engine bay + cockpit
+  assembly: {
+    region_rear: { dir: [-1, 0.45, 0], dist: 2.0, order: 10 },
+    region_cabin: { dir: [0, 1, 0], dist: 2.2, order: 20 },
+    region_front: { dir: [1, 0.4, 0], dist: 2.0, order: 30 },
+    underbody: { dir: [0, 1, 0], dist: 1.8, order: 0 },
+    engine: { dir: [1, 0.5, 0], dist: 2.2, order: 20 },
+    cockpit: { dir: [0, 1, 0], dist: 1.6, order: 30 },
+    rear_cabin: { dir: [0, 1, 0], dist: 1.6, order: 10 },
+    glazing_trim: { dir: [0, 1, 0], dist: 0.5 },
+    front_end: { dir: [1, 0.15, 0], dist: 1.0, order: 10 },
+    rear_end: { dir: [-1, 0.15, 0], dist: 1.0, order: 20 },
+    mirrors: { dir: [0, 0.4, 1], dist: 0.8, order: 30 },
+    small_trim: { dir: [0, 1, 0], dist: 0.5, order: 40 },
+  },
+  // many small meshes -> a handful of assembly units
+  groups: {
+    underbody: O(51, 113, 77, 104),
+    engine: O(27, 29, 30, 31, 32, 34, 35, 36, 37, 38, 39, 74, 93, 94, 96, 97, 98, 99, 102),
+    cockpit: O(17, 18, 19, 20, 23, 24, 25, 43, 44, 45, 80, 83, 95, 103, 105, 110, 112),
+    rear_cabin: O(16, 22, 48, 50, 79, 81, 82, 106, 107, 111, 87, 53, 70, 92, 117, 2),
+    glazing_trim: O(86, 26, 21, 89),
+    front_end: O(4, 5, 6, 8, 9, 10, 12, 13),
+    rear_end: O(41, 46, 47, 49, 120),
+    mirrors: O(11, 84, 85, 101, 116),
+    small_trim: O(73, 78, 90),
+  },
+  defaultStage: 5,
+  stages: {
+    0: O(27, 29, 30, 31, 32, 34, 35, 36, 37, 38, 39, 74, 93, 94, 96, 97, 98, 99, 102, 51, 113, 77, 104),                      // engine bay + underbody
+    1: O(114, 115, 123, 71, 72, 91, 122),                                                                                              // wheels, tyres, discs, calipers, lugs
+    2: O(16, 18, 19, 22, 24, 25, 44, 45, 48, 50, 79, 80, 81, 82, 105, 106, 107, 111, 112, 53, 87, 20, 17, 43, 23, 70, 92, 83, 95, 103, 110, 2, 117),   // seats, dash, cockpit
+    3: [...M3_PAINT, ...M3_SHELL, 'Object_52', 'Object_100'],                                                                       // body panels + (black) glass
+    4: O(86, 26, 21, 89),                                                                                                           // glazing trim
+  },
+};
+const GLTF_M3_CREDIT = {
+  text: '3D model: “2021 BMW M3 Competition” by supercarmodels, CC BY 4.0 (modified: repainted, staged)',
+  url: 'https://sketchfab.com/3d-models/2021-bmw-m3-competition-a9027a26b7ee4da4b564d939b6c27559',
+};
+
 export const CARS = {
   'carrera-4s': {
     id: 'carrera-4s',
@@ -115,6 +175,47 @@ export const CARS = {
     paint: { metalness: 0.9, roughness: 0.3 }, // GT Silver metallic + clear-coat
     shape: { profile: PROFILE_911 }, // procedural fallback body (+ `reflection: false` to skip the floor mirror)
     credit: GLTF_911_CREDIT,
+  },
+  'm3-g80': {
+    id: 'm3-g80',
+    garageNo: 'G80',
+    name: 'M3 Competition',
+    colorName: 'Isle of Man Green',
+    model: 'BMW G80 (2021)',
+    watermark: 'M3',
+    tagline: 'Then build the M3.',
+    color: '#0d4a32',
+    goal: 72000,              // ≈ 2021 M3 Competition US base MSRP (editable: set `goal` here, or `?goal=` / API)
+    label: 'Some revenue',
+    stages: DEFAULT_STAGES,
+    thresholds: SIXTHS,
+    builder: 'gltf',
+    gltf: GLTF_M3,
+    paint: { metalness: 0.8, roughness: 0.32 },
+    shape: { profile: PROFILE_911 },   // procedural fallback only (coupe silhouette) if the GLB fails to load
+    credit: GLTF_M3_CREDIT,
+  },
+  // Range Rover Velar HSE (L560, 2017+): NO freely downloadable, redistributable model could be found (the CC-BY Velars on Sketchfab need a
+  // logged-in download and nobody mirrors them with a licence file). The entry is a placeholder: it shows greyed-out in the selector and
+  // ?car=velar-hse falls back to the default car. To enable it: bake a GLB with tools/bake-model.mjs into assets/models/range-rover-velar.glb,
+  // add a `gltf` block like GLTF_M3 (node names -> stages), set builder: 'gltf', delete `soon`. See README "Adding the Velar".
+  'velar-hse': {
+    id: 'velar-hse',
+    soon: true,
+    garageNo: 'L560',
+    name: 'Velar HSE',
+    colorName: 'Santorini Black',
+    model: 'Range Rover Velar (2017+)',
+    watermark: 'VELAR',
+    tagline: 'Then build the Velar.',
+    color: '#15181c',
+    goal: 70000,              // ≈ Velar HSE US price (editable)
+    label: 'Some revenue',
+    stages: DEFAULT_STAGES,
+    thresholds: SIXTHS,
+    builder: 'coupe',
+    paint: { metalness: 0.7, roughness: 0.3 },
+    shape: { profile: PROFILE_911 },
   },
   cayman: {
     id: 'cayman',
@@ -141,5 +242,6 @@ export const CARS = {
 export const DEFAULT_CAR = 'carrera-4s';
 
 export function getCar(id) {
-  return CARS[id] || CARS[DEFAULT_CAR];
+  const c = CARS[id];
+  return c && !c.soon ? c : CARS[DEFAULT_CAR];   // `soon` cars (no model yet) are never loaded
 }
