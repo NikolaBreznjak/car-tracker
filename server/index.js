@@ -11,7 +11,7 @@ const crypto = require('crypto');
 
 const PORT = Number(process.env.PORT) || 8080;
 const API_KEY = process.env.API_KEY || '';
-const DATA_FILE = path.resolve(process.env.DATA_FILE || path.join(__dirname, '..', 'data', 'state.json'));
+const DATA_FILE = path.resolve(process.env.DATA_FILE || path.join(__dirname, '..', 'data', 'server-state.json'));
 const ROOT = path.resolve(__dirname, '..');
 const ALLOW_ORIGIN = process.env.CORS_ORIGIN || '*';
 const MAX_HISTORY = 200;
@@ -37,11 +37,13 @@ function save() {
 const publicState = () => {
   const o = { raised: state.raised, car: state.car, label: state.label, updatedAt: state.updatedAt };
   if (state.goal) o.goal = state.goal;
+  // recent events for the chart + "recent" list (same shape as data/history/<id>.json)
+  o.history = state.history.slice(-200).map((e) => ({ ts: e.t, type: e.type === 'revenue' ? 'add' : 'set', amount: e.amount, note: e.note, raised: e.raised }));
   return o;
 };
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.ico': 'image/x-icon', '.txt': 'text/plain' };
-const STATIC_ALLOW = /^\/(index\.html|css\/|js\/|vendor\/|fonts\/|models\/|favicon)/;
+const STATIC_ALLOW = /^\/(index\.html|css\/|js\/|vendor\/|fonts\/|assets\/|data\/|social\/|favicon)/;
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', ALLOW_ORIGIN);
