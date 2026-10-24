@@ -93,7 +93,7 @@ if (EVENT === 'add-revenue') {
 }
 if (EVENT === 'add-revenue' || P.demo === undefined) delete G.demo;   // real data switches off the demo autoplay
 if (evId) ev.id = evId;
-if (!(EVENT === 'set-state' && bool(P.reset) && P.raised === undefined)) H.events.push(ev);
+if (!(EVENT === 'set-state' && bool(P.reset))) H.events.push(ev);   // a reset starts a clean history (the new total is in the goal file)
 H.events.sort((a, b) => a.ts.localeCompare(b.ts));
 if (H.events.length > MAX_EVENTS) H.events.splice(0, H.events.length - MAX_EVENTS);
 G.updatedAt = new Date().toISOString();

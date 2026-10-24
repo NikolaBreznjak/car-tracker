@@ -1,4 +1,12 @@
 {
   "id": "default",
-  "events": []
+  "events": [
+    {
+      "ts": "2026-10-24T16:33:53.115Z",
+      "type": "add",
+      "amount": 1500,
+      "raised": 1500,
+      "note": "E2E test (Grok Bot)"
+    }
+  ]
 }

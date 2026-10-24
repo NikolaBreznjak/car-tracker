@@ -3,8 +3,7 @@
   "label": "Some revenue",
   "car": "carrera-4s",
   "goal": null,
-  "raised": 0,
-  "demo": true,
-  "updatedAt": "2026-10-24T16:04:09.000Z",
-  "events": 0
+  "raised": 1500,
+  "updatedAt": "2026-10-24T16:33:53.116Z",
+  "events": 1
 }

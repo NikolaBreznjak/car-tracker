@@ -46,7 +46,7 @@ Recommended for dashboards: send `set-state {"raised": <current total>}` on a sc
 | `car` | set-state (or add-revenue on a new goal) | `carrera-4s`, `m3-g80`, `f40` (unknown ids fall back to the 911) |
 | `label` | set-state (or add-revenue on a new goal) | ≤ 60 chars, shown above the amount |
 | `demo` | set-state | `true` = the page plays the 0 → 100 % demo instead of showing the stored value (the `default` goal ships like this). Any real event switches it off. |
-| `reset` | set-state | `true` = clear the history |
+| `reset` | set-state | `true` = clear the history (combine with `raised` to restart from a value) |
 
 GitHub limits `client_payload` to 10 top-level keys and 64 KB.
 
