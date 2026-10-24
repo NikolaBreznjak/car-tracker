@@ -283,8 +283,8 @@ function renderUI(force) {
   const lis = $('stages').children; let completed = 0, activeIdx = -1;
   for (let i = 0; i < 6; i++) { if (pct >= th[i] - 1e-9) completed++; }
   if (prevCompleted !== null && completed > prevCompleted && !toastQuiet && S.mode === 'build') {
-    const names = S.car.stages || DEFAULT_STAGES, fresh = names.slice(prevCompleted, completed);
-    if (fresh.length > 2) toast(`${fresh.length} stages locked in`, fresh[fresh.length - 1]);
+    const names = S.car.stages || DEFAULT_STAGES, fresh = names.slice(prevCompleted, Math.min(completed, 5));   // the 6th stage gets the "fully funded" banner instead
+    if (!fresh.length) { /* banner only */ } else if (fresh.length > 2) toast(`${fresh.length} stages locked in`, fresh[fresh.length - 1]);
     else fresh.forEach((n, k) => toast(`${n} locked in`, completed - fresh.length + k + 1 + ' / 6'));
   }
   prevCompleted = completed;
