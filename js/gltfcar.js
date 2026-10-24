@@ -33,6 +33,17 @@ const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 // DELAY_MAX + DUR = 0.7 => every part of a stage has landed by 70% of that stage (the car is solid at 62%).
 const DELAY_MAX = 0.4, DUR = 0.3;
 
+let haloTexture = null;
+function haloTex() {
+  if (haloTexture) return haloTexture;
+  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+  const gr = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.18, 'rgba(255,255,255,.55)'); gr.addColorStop(0.5, 'rgba(255,255,255,.12)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+  haloTexture = new THREE.CanvasTexture(c); haloTexture.colorSpace = THREE.SRGBColorSpace;
+  return haloTexture;
+}
+
 let loaderSingleton = null;
 function getLoader() {
   if (loaderSingleton) return loaderSingleton;
@@ -174,6 +185,18 @@ export function buildGltfCar(cfg, renderer) {
   let setFn = () => {};
   let fallback = null;
   root.userData.setProgress = (lv) => setFn(lv);
+  // low-power: no mirrored floor reflection, no sparks (set before or after the model has loaded)
+  let lowPower = false, mirrorRef = null, sparksRef = null;
+  const applyLowPower = () => { if (mirrorRef) mirrorRef.visible = !lowPower; if (sparksRef) sparksRef.userData.off = lowPower; };
+  root.userData.setLowPower = (on) => { lowPower = !!on; applyLowPower(); };
+  // free GPU memory when the car is switched; a model still downloading is dropped as soon as it arrives
+  let disposed = false;
+  const disposeTree = (obj) => obj.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    for (const m of ms) { for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap', 'clearcoatNormalMap']) if (m[k]) m[k].dispose(); m.dispose(); }
+  });
+  root.userData.dispose = () => { disposed = true; disposeTree(root); root.clear(); };
 
   function useFallback(err) {
     console.warn('[car-tracker] model failed to load, using procedural fallback:', err && err.message || err);
@@ -205,7 +228,7 @@ export function buildGltfCar(cfg, renderer) {
       m.userData.glass = true;
     } else { m = src.clone(); }
     const ov = g.materialOverrides && g.materialOverrides[src.name];
-    if (ov) { const { emissiveFromMap, ...rest } = ov; Object.assign(m, rest); if (emissiveFromMap && m.map) { m.emissive.set(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = emissiveFromMap; } }
+    if (ov) { const { emissiveFromMap, tint, ...rest } = ov; Object.assign(m, rest); if (tint !== undefined && m.color) m.color.set(tint); /* tint multiplies the texture (light-grey seats -> black leather) */ if (emissiveFromMap && m.map) { m.emissive.set(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = emissiveFromMap; } }
     if (m.map) m.map.anisotropy = 4;
     if (lightMats.has(src.name) && !m.emissiveMap) { m.emissive = new THREE.Color(0xfff1d0); m.emissiveIntensity = 0; m.userData.lamp = true; }
     injectUnit(m, unit.U);
@@ -232,6 +255,7 @@ export function buildGltfCar(cfg, renderer) {
   }
 
   getLoader().load(new URL(g.url, location.href).href, (gltf) => {
+    if (disposed) { disposeTree(gltf.scene); return; }
     try {
       const model = gltf.scene;
       const hide = new Set((g.hide || []).map(clean));
@@ -360,6 +384,7 @@ export function buildGltfCar(cfg, renderer) {
         p.fly = mk(1, u.alphaFly); p.home = mk(0, u.alphaHome);
       };
       pieces.forEach(makePiece);
+      const lampGlows = addLampGlows(pieces);
 
       // wheel dimensions
       const wheels = [];
@@ -405,7 +430,7 @@ export function buildGltfCar(cfg, renderer) {
         fragmentShader: `varying float vA; void main(){ float d = length(gl_PointCoord - 0.5) * 2.0; float a = (1.0 - smoothstep(0.0, 1.0, d)); a *= a * vA; gl_FragColor = vec4(vec3(0.85, 0.95, 0.15) * a * 1.6, a); }`,
       });
       const sparks = new THREE.Points(spGeo, spMat); sparks.frustumCulled = false; sparks.renderOrder = 6;
-      root.add(sparks);
+      root.add(sparks); sparksRef = sparks;
 
       // reflection: mirrored clone sharing geometry + materials
       let mirror = null; const mirrorPairs = [];
@@ -415,8 +440,11 @@ export function buildGltfCar(cfg, renderer) {
         const srcMeshes = [], dstMeshes = [];
         car.traverse((o) => { if (o.isMesh) srcMeshes.push(o); }); c.traverse((o) => { if (o.isMesh) dstMeshes.push(o); });
         srcMeshes.forEach((s, i) => { dstMeshes[i].renderOrder = -3; dstMeshes[i].frustumCulled = false; mirrorPairs.push([s, dstMeshes[i]]); });
-        root.add(mirror);
+        root.add(mirror); mirrorRef = mirror;
       }
+      // lamp glow overlays are added after the mirror clone (no glowing reflection blobs on the floor)
+      for (const lg of lampGlows) lg.parent.add(lg.obj);
+      applyLowPower();
 
       const tmp = new THREE.Vector3();
       setFn = (levels) => {
@@ -464,7 +492,13 @@ export function buildGltfCar(cfg, renderer) {
             spA[j] = Math.pow(1 - tau, 1.4) * (0.55 + 0.45 * Math.sin((k + 1) * 12.9898 + tau * 6)); live = true;
           }
         });
-        spGeo.attributes.position.needsUpdate = true; spGeo.attributes.aA.needsUpdate = true; sparks.visible = true;
+        // lamp glow overlays: on once the lamp's unit has locked in (finishing touches)
+        for (const lg of lampGlows) {
+          const t = lg.unit.t || 0, gl = sstep(0.55, 0.9, t);
+          lg.ov.userData.base = gl * lg.strength; lg.obj.visible = gl > 0.002;
+          for (const sp of lg.sprites) sp.userData.base = gl * lg.halo;
+        }
+        spGeo.attributes.position.needsUpdate = true; spGeo.attributes.aA.needsUpdate = true; sparks.visible = live && !sparks.userData.off;
         for (const [a, b] of mirrorPairs) b.visible = a.visible;
       };
       root.userData.state = 'ready';
@@ -472,6 +506,64 @@ export function buildGltfCar(cfg, renderer) {
       root.userData.onReady && root.userData.onReady();
     } catch (err) { useFallback(err); }
   }, undefined, (err) => useFallback(err));
+
+  // ---------- lamp glow ----------
+  // Many exported lamp materials are transparent lenses or emissive-free textures, so emissive alone barely shows.
+  // For every mesh listed in cfg.gltf.lamps (by node or material name) we add an additive, unlit copy of its geometry in
+  // the lamp colour plus a soft halo sprite per lamp cluster. 'auto' = warm white at the front (x > 0), red at the rear.
+  const _cam = new THREE.Vector3();
+  function facing(o, worldPos, dir) {
+    o.userData.base = 0;
+    o.onBeforeRender = (r, sc, cam) => {
+      _cam.copy(cam.position).sub(worldPos).normalize();
+      o.material.opacity = o.userData.base * sstep(-0.1, 0.35, _cam.dot(dir));
+    };
+  }
+  function addLampGlows(pieces) {
+    const spec = g.lamps || {};
+    const out = [];
+    const COL = { head: 0xfff1d6, tail: 0xff1a0d, amber: 0xff8a10 };
+    for (const p of pieces) {
+      const s0 = spec[p.node] || spec[p.srcMat.name] || spec[p.mesh.name];
+      if (!s0) continue;
+      const s = typeof s0 === 'string' ? { kind: s0 } : s0;
+      const m = p.mesh; m.updateMatrixWorld(true);
+      const halves = s.kind === 'auto' ? splitByTriangle(m, (c) => c.x > 0) : [m.geometry, null];
+      halves.forEach((geo, hi) => {
+        if (!geo) return;
+        const kind = s.kind === 'auto' ? (hi === 0 ? 'head' : 'tail') : s.kind;
+        const color = new THREE.Color(s.color ?? COL[kind] ?? COL.head);
+        const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+        const obj = new THREE.Group();
+        const ov = new THREE.Mesh(geo, mat); ov.position.copy(m.position); ov.quaternion.copy(m.quaternion); ov.scale.copy(m.scale); ov.renderOrder = 7; ov.frustumCulled = false;
+        obj.add(ov);
+        // only glow towards the outside: a lamp seen through the cabin glass from the other end of the car stays dark
+        const hb = new THREE.Box3(); { const pp = geo.attributes.position, ii = geo.index, vv = new THREE.Vector3(), nn = ii ? ii.count : pp.count; for (let i = 0; i < nn; i++) hb.expandByPoint(vv.fromBufferAttribute(pp, ii ? ii.getX(i) : i).applyMatrix4(m.matrixWorld)); }
+        const hc = hb.getCenter(new THREE.Vector3());
+        facing(ov, hc, new THREE.Vector3(Math.sign(hc.x) || 1, 0.12, 0).normalize());
+        // halo sprites: one per side (z > 0 / z < 0) at the lit area's centre, pushed slightly outwards
+        const sprites = [];
+        const pos = geo.attributes.position, idx = geo.index, v = new THREE.Vector3();
+        const boxes = [new THREE.Box3(), new THREE.Box3()];
+        const n = idx ? idx.count : pos.count;
+        for (let i = 0; i < n; i++) { v.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(m.matrixWorld); boxes[v.z >= 0 ? 0 : 1].expandByPoint(v); }
+        for (const b of boxes) {
+          if (b.isEmpty()) continue;
+          const c = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3());
+          const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTex(), color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+          const r = Math.min(0.55, Math.max(0.16, Math.max(sz.y, sz.z) * (s.haloSize ?? 1.3)));
+          sp.scale.set(r, r * 0.75, 1);
+          // local to m.parent: convert the world-space centre back
+          const out0 = c.clone(); out0.x += (c.x > 0 ? 1 : -1) * 0.05;
+          m.parent.worldToLocal(out0); sp.position.copy(out0); sp.renderOrder = 8;
+          facing(sp, c, new THREE.Vector3(Math.sign(c.x) || 1, 0.15, (Math.sign(c.z) || 1) * 0.45).normalize());
+          obj.add(sp); sprites.push(sp);
+        }
+        out.push({ obj, ov, parent: m.parent, mat, sprites, unit: p.unit, strength: s.strength ?? (kind === 'tail' ? 0.9 : 0.75), halo: s.halo ?? (kind === 'tail' ? 0.55 : 0.7) });
+      });
+    }
+    return out;
+  }
 
   // ---------- procedural extras (stage 0 drivetrain, stage 2 cockpit) ----------
   function addExtras(box, carC, sizeX, makePiece) {

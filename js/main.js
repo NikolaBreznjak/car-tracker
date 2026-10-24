@@ -10,6 +10,8 @@ const BUILDERS = { coupe: buildCoupe, gltf: buildGltfCar };
 const P = parseParams();
 const $ = (id) => document.getElementById(id);
 if (P.embed) document.body.classList.add('embed');
+if (P.embed && P.header) document.body.classList.add('show-header');
+if (!P.chart) document.body.classList.add('no-chart');
 
 // ---------------- state ----------------
 const S = {
@@ -25,8 +27,11 @@ const S = {
   manual: false,     // the user is overriding the live value by dragging
   manualUntil: 0,    // performance.now() ms until which live updates stay paused
   dragging: false,
+  history: [],       // [{ts, type: 'add'|'set', amount?, note?, raised}] oldest first
+  lowPower: false,
+  onscreen: true,    // stage visible in the viewport (IntersectionObserver) — rendering pauses when not
 };
-const goal = () => P.goal ?? S.goal ?? S.car.goal;
+const goal = () => P.target ?? S.goal ?? S.car.goal;
 const fmt = (n) => '$' + Math.round(n).toLocaleString('en-US');
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
@@ -95,8 +100,8 @@ function radialTex(stops, size = 256) {
   stops.forEach(([o, col]) => gr.addColorStop(o, col)); g.fillStyle = gr; g.fillRect(0, 0, size, size);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
-const floorMat = new THREE.MeshBasicMaterial({ map: radialTex([[0, 'rgba(22,23,23,.8)'], [0.75, 'rgba(22,23,23,.8)'], [0.92, 'rgba(22,23,23,.5)'], [1, 'rgba(22,23,23,0)']], 512), transparent: true, depthWrite: false, toneMapped: false }); // ~20% of the mirrored car shows through
-const floor = new THREE.Mesh(new THREE.CircleGeometry(10, 64), floorMat);
+const floorMat = new THREE.MeshBasicMaterial({ map: radialTex([[0, 'rgba(22,23,23,.8)'], [0.5, 'rgba(22,23,23,.8)'], [0.78, 'rgba(22,23,23,.45)'], [1, 'rgba(22,23,23,0)']], 512), transparent: true, depthWrite: false, toneMapped: false }); // ~20% of the mirrored car shows through
+const floor = new THREE.Mesh(new THREE.CircleGeometry(7, 64), floorMat);   // fades out inside the view, so the canvas edge never shows as a box
 floor.rotation.x = -Math.PI / 2; floor.position.y = 0.0005; floor.renderOrder = -2; scene.add(floor);
 const pool = new THREE.Mesh(new THREE.CircleGeometry(3.6, 64), new THREE.MeshBasicMaterial({ map: radialTex([[0, 'rgba(255,255,255,.075)'], [0.6, 'rgba(255,255,255,.03)'], [1, 'rgba(255,255,255,0)']], 256), transparent: true, depthWrite: false }));
 pool.rotation.x = -Math.PI / 2; pool.position.y = 0.0008; pool.renderOrder = -2; scene.add(pool);
@@ -116,16 +121,20 @@ const wsTex = radialTex([[0, 'rgba(0,0,0,.8)'], [0.5, 'rgba(0,0,0,.45)'], [1, 'r
 const ring = new THREE.Mesh(new THREE.RingGeometry(3.0, 3.015, 128), new THREE.MeshBasicMaterial({ color: 0xc4d300, transparent: true, opacity: 0.18, depthWrite: false }));
 ring.rotation.x = -Math.PI / 2; ring.position.y = 0.003; ring.renderOrder = -1; scene.add(ring);
 
-let carObj = null;
+let carObj = null, carLoaded = false;
 const levels = [0, 0, 0, 0, 0, 0];   // smoothed
 let levelTargets = [0, 0, 0, 0, 0, 0];
 let replay = 0;
 
 function loadCar() {
-  if (carObj) { scene.remove(carObj); carObj.traverse((o) => { o.geometry && o.geometry.dispose(); }); }
+  if (carObj) {   // free the previous car's GPU memory (geometries, materials, textures); only the selected GLB is ever downloaded
+    scene.remove(carObj);
+    if (carObj.userData.dispose) carObj.userData.dispose(); else carObj.traverse((o) => { o.geometry && o.geometry.dispose(); });
+  }
   const b = typeof S.car.builder === 'function' ? S.car.builder : BUILDERS[S.car.builder] || buildCoupe;
   const mine = (carObj = b(S.car, renderer));
-  scene.add(carObj);
+  if (carObj.userData.setLowPower) carObj.userData.setLowPower(S.lowPower);
+  scene.add(carObj); carLoaded = true;
   const loading = $('loading'); if (loading) loading.classList.toggle('show', carObj.userData.state === 'loading');
   // contact shadows follow this car's wheelbase / length (re-run once an async model has loaded)
   const fitShadows = () => {
@@ -190,10 +199,73 @@ function applyCarText() {
   document.title = `${c.name} — One sale closer.`;
 }
 function setCar(id) {
-  S.car = getCar(id); applyCarText(); buildStageList(); buildSelector(); loadCar(); levels.fill(0); renderUI(true);
+  S.car = getCar(id); applyCarText(); buildStageList(); buildSelector(); prevCompleted = null;
+  if (carLoaded) { loadCar(); levels.fill(0); }
+  renderUI(true); renderHistory();
 }
 
 let lastKey = '';
+let prevCompleted = null;   // stage count at the last render (toasts fire when it goes up)
+let toastQuiet = true;      // no toasts for the initial count-up to the stored value
+let quietUntilSettled = false;
+
+// ---------------- toasts ("Wheels & brakes locked in") ----------------
+function toast(text, sub) {
+  const box = $('toasts'); if (!box) return;
+  while (box.children.length >= 3) box.firstChild.remove();
+  const el = document.createElement('div'); el.className = 'toast';
+  el.innerHTML = '<span class="tk">✓</span><span class="tt"></span><span class="ts"></span>';
+  el.querySelector('.tt').textContent = text; el.querySelector('.ts').textContent = sub || '';
+  box.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 450); }, 3200);
+}
+
+// ---------------- revenue history: sparkline + recent list ----------------
+const money = (n) => (n < 0 ? '−' : '') + '$' + Math.abs(Math.round(n)).toLocaleString('en-US');
+function relTime(ts) {
+  const s = (Date.now() - new Date(ts).getTime()) / 1000;
+  if (s < 45) return 'just now';
+  if (s < 3600) return Math.round(s / 60) + 'm ago';
+  if (s < 86400) return Math.round(s / 3600) + 'h ago';
+  if (s < 86400 * 7) return Math.round(s / 86400) + 'd ago';
+  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+function renderHistory() {
+  const box = $('history'); if (!box) return;
+  const ev = S.history.filter((e) => e && e.ts && typeof e.raised === 'number');
+  box.hidden = !ev.length;
+  if (!ev.length) return;
+  // cumulative revenue as a step line: start value before the first event, then each event's resulting total, extended to now
+  const t = (e) => new Date(e.ts).getTime();
+  const first = ev[0], start = Math.max(0, first.raised - (first.type === 'add' ? first.amount || 0 : 0));
+  const pts = [[t(first), start], ...ev.map((e) => [t(e), e.raised])];
+  const now = Math.max(Date.now(), pts[pts.length - 1][0]);
+  let t0 = pts[0][0], t1 = now; if (t1 - t0 < 60e3) t0 = t1 - 60e3;
+  const W = 300, H = 56, top = 5;
+  const ymax = Math.max(goal(), ...pts.map((p) => p[1])) || 1;
+  const X = (x) => ((x - t0) / (t1 - t0)) * W, Y = (y) => H - (y / ymax) * (H - top);
+  let d = `M${X(pts[0][0]).toFixed(1)},${Y(pts[0][1]).toFixed(1)}`;
+  for (let i = 1; i < pts.length; i++) d += `H${X(pts[i][0]).toFixed(1)}V${Y(pts[i][1]).toFixed(1)}`;
+  d += `H${W}`;
+  const last = pts[pts.length - 1];
+  $('sparkLine').setAttribute('d', d);
+  $('sparkArea').setAttribute('d', d + `V${H}H${X(pts[0][0]).toFixed(1)}Z`);
+  $('sparkGoal').setAttribute('y1', Y(goal()).toFixed(1)); $('sparkGoal').setAttribute('y2', Y(goal()).toFixed(1));
+  $('sparkDot').setAttribute('cx', W); $('sparkDot').setAttribute('cy', Y(last[1]).toFixed(1));
+  const adds = ev.filter((e) => e.type === 'add').length;
+  $('histMeta').textContent = `${adds} ${adds === 1 ? 'entry' : 'entries'} · since ${new Date(pts[0][0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  const ul = $('recent'); ul.innerHTML = '';
+  ev.slice(-5).reverse().forEach((e) => {
+    const li = document.createElement('li');
+    const amt = document.createElement('span'); amt.className = 'ra ' + (e.type === 'set' ? 'set' : (e.amount || 0) < 0 ? 'neg' : 'pos');
+    amt.textContent = e.type === 'set' ? '= ' + money(e.raised) : ((e.amount || 0) >= 0 ? '+' : '') + money(e.amount || 0);
+    const note = document.createElement('span'); note.className = 'rn'; note.textContent = e.note || (e.type === 'set' ? 'total set' : 'revenue');
+    const tm = document.createElement('time'); tm.className = 'rt'; tm.dateTime = e.ts; tm.textContent = relTime(e.ts); tm.title = new Date(e.ts).toLocaleString();
+    li.append(amt, note, tm); ul.appendChild(li);
+  });
+}
+setInterval(() => { if (!document.hidden && S.history.length) renderHistory(); }, 30000);
 function renderUI(force) {
   const g = goal(), shown = S.raisedShown, pct = clamp01(g > 0 ? shown / g : 0);
   const th = S.car.thresholds;
@@ -210,6 +282,12 @@ function renderUI(force) {
   // stages
   const lis = $('stages').children; let completed = 0, activeIdx = -1;
   for (let i = 0; i < 6; i++) { if (pct >= th[i] - 1e-9) completed++; }
+  if (prevCompleted !== null && completed > prevCompleted && !toastQuiet && S.mode === 'build') {
+    const names = S.car.stages || DEFAULT_STAGES, fresh = names.slice(prevCompleted, completed);
+    if (fresh.length > 2) toast(`${fresh.length} stages locked in`, fresh[fresh.length - 1]);
+    else fresh.forEach((n, k) => toast(`${n} locked in`, completed - fresh.length + k + 1 + ' / 6'));
+  }
+  prevCompleted = completed;
   if (pct > 0 && completed < 6) activeIdx = completed;
   for (let i = 0; i < lis.length; i++) { lis[i].className = i < completed ? 'done' : i === activeIdx ? 'active' : ''; }
   $('count').textContent = `${completed} / 6`;
@@ -229,12 +307,13 @@ function setTarget(v, instant) {
 }
 
 // ---------------- data wiring ----------------
-const ds = new DataSource(P, (st, mode) => {
+const ds = new DataSource(P, (st, mode, history) => {
   S.source = mode;
-  if (S.demoPlaying) return;
-  if (typeof st.goal === 'number' && st.goal > 0) S.goal = st.goal;
+  if (st.car && !P.car && CARS[st.car] && !CARS[st.car].soon && CARS[st.car].id !== S.car.id) setCar(st.car);   // the goal's car, unless ?car= overrides
+  if ('goal' in st) S.goal = typeof st.goal === 'number' && st.goal > 0 ? st.goal : null;
   if (typeof st.label === 'string') S.label = st.label;
-  if (st.car && !P.car && CARS[st.car] && !CARS[st.car].soon && CARS[st.car].id !== S.car.id) setCar(st.car);
+  if (history) { S.history = history; renderHistory(); }
+  if (S.demoPlaying) return;
   S.liveRaised = st.raised;                 // always remember the live value (for "reset")
   if (manualActive()) return;               // dragging overrides polling while active and for ~15 s after
   if (st.raised !== S.raisedTarget) setTarget(st.raised, false);
@@ -390,8 +469,23 @@ function nudgeCamera(dt) {
 
 // ---------------- loop ----------------
 let last = performance.now();
+const LP = { auto: P.lowpower === null, ema: 16, slowSince: 0, readyAt: 0 };
+let skipped = 0;
 function frame(now) {
-  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  requestAnimationFrame(frame);
+  if (document.hidden || !S.onscreen) { last = now; skipped++; return; }   // tab hidden / iframe scrolled out of view: no rendering
+  const rawMs = now - last;
+  const dt = Math.min(0.1, rawMs / 1000); last = now;
+  if (quietUntilSettled && !tween && !S.demoPlaying) { quietUntilSettled = false; toastQuiet = false; }
+  // automatic low-power: frame time above 25 ms for 3 s straight (once the model is up; shader compiles are ignored)
+  if (LP.auto && !S.lowPower && carObj && carObj.userData.state !== 'loading') {
+    if (!LP.readyAt) LP.readyAt = now;
+    if (now - LP.readyAt > 2000 && rawMs < 3000) {      // (multi-second gaps = the tab was throttled, not a slow GPU)
+      LP.ema = LP.ema * 0.85 + Math.min(rawMs, 250) * 0.15;
+      if (LP.ema > 25) { if (!LP.slowSince) LP.slowSince = now; else if (now - LP.slowSince > 3000) setLowPower(true, 'auto: frame time ' + LP.ema.toFixed(0) + ' ms'); }
+      else LP.slowSince = 0;
+    }
+  }
   if (tween) {
     const t = clamp01((now - tween.t0) / tween.dur), e = 1 - Math.pow(1 - t, 3);
     S.raisedShown = tween.from + (tween.to - tween.from) * e; if (t >= 1) tween = null;
@@ -407,15 +501,85 @@ function frame(now) {
   wheelShadows.children.forEach((m) => { m.material.opacity = Math.min(1, levels[1] * 2); }); // tyre shadows appear with the wheels
   controls.update();
   renderer.render(scene, camera);
-  if (!window.__ready && now > 600) window.__ready = true;
-  requestAnimationFrame(frame);
+  if (!window.__ready && now > 600 && carLoaded) window.__ready = true;
 }
 
+// ---------------- low-power mode ----------------
+// ?lowpower=1 forces it, ?lowpower=0 disables the automatic switch. Low-power = no floor reflection, no sparks, pixel ratio 1.
+function setLowPower(on, why) {
+  S.lowPower = on; S.lowPowerWhy = why || '';
+  renderer.setPixelRatio(on ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+  resize();
+  if (carObj && carObj.userData.setLowPower) carObj.userData.setLowPower(on);
+  document.body.classList.toggle('lowpower', on);
+  const chip = $('lp'); if (chip) { chip.hidden = !on; chip.title = why || ''; }
+  if (on) console.info('[car-tracker] low-power mode:', why);
+}
+if (P.lowpower === true) setLowPower(true, '?lowpower=1');
+else if (P.lowpower === null && matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 820) setLowPower(true, 'auto: mobile');
+// pause rendering when the stage is scrolled out of view (e.g. an embed further down your dashboard)
+if ('IntersectionObserver' in window) new IntersectionObserver((es) => { S.onscreen = es[es.length - 1].isIntersecting; }, { threshold: 0 }).observe($('stage'));
+
+// ---------------- embed builder ----------------
+function setupEmbedBuilder() {
+  const btn = $('embedBtn'), panel = $('embedPanel'); if (!btn || P.embed) return;
+  const gSel = $('ebGoal'), cSel = $('ebCar');
+  const base = location.origin + location.pathname.replace(/index\.html$/, '');
+  cSel.innerHTML = '<option value="">Goal\'s car</option>';
+  Object.values(CARS).filter((c) => !c.hidden && !c.soon).forEach((c) => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.name; cSel.appendChild(o); });
+  const fillGoals = (list) => {
+    gSel.innerHTML = '';
+    const ids = list.length ? [...list] : [{ id: 'default', label: 'Some revenue' }];
+    if (!ids.some((g) => g.id === P.goalId)) ids.push({ id: P.goalId, label: S.label || '' });
+    ids.forEach((g) => { const o = document.createElement('option'); o.value = g.id; o.textContent = g.id + (g.label ? ' — ' + g.label : ''); gSel.appendChild(o); });
+    const o = document.createElement('option'); o.value = '__new'; o.textContent = 'New goal id…'; gSel.appendChild(o);
+    gSel.value = ids.some((g) => g.id === P.goalId) ? P.goalId : ids[0].id;
+    update();
+  };
+  const url = () => {
+    const q = new URLSearchParams();
+    const gid = gSel.value === '__new' ? ($('ebGoalNew').value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 40) || 'default') : gSel.value;
+    if (gid && gid !== 'default') q.set('goal', gid);
+    if (cSel.value) q.set('car', cSel.value);
+    q.set('embed', '1');
+    if ($('ebDrag').checked) q.set('drag', '1');
+    if ($('ebHeader').checked) q.set('header', '1');
+    if (!$('ebChart').checked) q.set('chart', '0');
+    return base + '?' + q.toString().replace(/%2F/g, '/');
+  };
+  function update() {
+    $('ebGoalNew').hidden = gSel.value !== '__new';
+    const u = url(), h = Math.max(320, Math.min(1400, +$('ebHeight').value || 640));
+    $('ebUrl').value = u; $('ebOpen').href = u;
+    $('ebCode').value = `<iframe src="${u}"\n  title="Revenue tracker" style="width:100%;height:${h}px;border:0;border-radius:16px;background:#111" loading="lazy"></iframe>`;
+  }
+  panel.querySelectorAll('input, select').forEach((el) => el.addEventListener('input', update));
+  const copy = (id, b) => async () => {
+    const v = $(id).value; let ok = false;
+    try { await navigator.clipboard.writeText(v); ok = true; } catch (e) { $(id).select(); ok = document.execCommand && document.execCommand('copy'); }
+    b.textContent = ok ? 'Copied ✓' : 'Select + ⌘C'; setTimeout(() => (b.textContent = b.dataset.label), 1600);
+  };
+  panel.querySelectorAll('[data-copy]').forEach((b) => { b.dataset.label = b.textContent; b.onclick = copy(b.dataset.copy, b); });
+  const open = (on) => { panel.hidden = !on; btn.setAttribute('aria-expanded', on); if (on) { fetch('./data/index.json?t=' + Date.now(), { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { goals: [] })).then((j) => fillGoals(j.goals || [])).catch(() => fillGoals([])); } };
+  btn.onclick = () => open(panel.hidden);
+  $('ebClose').onclick = () => open(false);
+  panel.addEventListener('pointerdown', (e) => { if (e.target === panel) open(false); });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panel.hidden) open(false); });
+  fillGoals([]);
+}
+setupEmbedBuilder();
+
 // ---------------- boot ----------------
-applyCarText(); buildStageList(); buildSelector(); loadCar(); resize();
+applyCarText(); buildStageList(); buildSelector(); resize();
 if (P.demo) setupDemoPanel();
-ds.start().then(() => {
-  if (ds.mode === 'param') setTarget(P.raised, P.raised > 0 && false);
+$('loading').classList.add('show');
+// lazy-load: wait for the goal's data first (it may pick a different car), so only ONE model is ever downloaded
+const started = ds.start();
+Promise.race([started, new Promise((r) => setTimeout(r, P.car ? 0 : 5000))]).then(() => { if (!carLoaded) loadCar(); });
+started.then(() => {
+  if (!carLoaded) loadCar();
+  if (ds.mode === 'param') setTarget(P.raised, false);
+  if (ds.mode === 'demo') toastQuiet = false; else quietUntilSettled = true;
   if (ds.mode === 'demo' && !P.demo) setTimeout(() => playDemo(6500), 900);
   if (P.demo) $('demoMode').textContent = '· ' + ds.mode;
   window.__source = ds.mode;
@@ -423,4 +587,4 @@ ds.start().then(() => {
 requestAnimationFrame(frame);
 // test hooks
 Object.defineProperty(window, '__car', { get: () => carObj });
-window.__ct = { settle: () => { renderUI(true); levels.forEach((_, i) => (levels[i] = levelTargets[i])); }, drag: setManualValue, beginManual, endManual, resetManual, scene, floor, shadow, wheelShadows, pool, ring, camera, renderer, setRaised: (v) => { S.demoPlaying = false; setTarget(v, true); }, state: S, levels };
+window.__ct = { settle: () => { renderUI(true); levels.forEach((_, i) => (levels[i] = levelTargets[i])); }, drag: setManualValue, toast, setLowPower, get skipped() { return skipped; }, get lowPower() { return S.lowPower; }, lp: LP, beginManual, endManual, resetManual, scene, floor, shadow, wheelShadows, pool, ring, camera, renderer, setRaised: (v) => { S.demoPlaying = false; setTarget(v, true); }, state: S, levels };

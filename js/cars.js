@@ -80,6 +80,8 @@ const GLTF_911 = {
     boot009: { dir: [0, 1, 0], dist: 0.35 },
   },
   materialOverrides: { license: { metalness: 0, roughness: 0.55, emissiveFromMap: 0.35 } },   // number plates read as white in the dark studio
+  // lamps that light up at the finishing stage (node or material name -> 'head' | 'tail' | 'amber' | 'auto' = by end of the car)
+  lamps: { lights: 'auto', tex_shiny: 'auto' },
   defaultStage: 5,
   stages: {
     0: ['boot', 'boot010'],                                                                         // floor pan, arch liners
@@ -110,6 +112,12 @@ const GLTF_M3 = {
   paintMaterials: ['Merged_materials', 'Hoodpainttextured1Mtl'],
   glassMaterials: ['Window1Mtl', 'Rearleftdoorwindow1Mtl', 'Taillightglass21Mtl_0'],   // (the front-door glass is mislabelled 'Taillightglass…_0'),
   lightMaterials: [],
+  lamps: { Drl21Mtl: 'head', Drl21Mtl_0: 'head', Taillightglass21Mtl: { kind: 'tail', strength: 1.4, halo: 0.8 }, Object_47: { kind: 'tail', strength: 1.2 } },
+  // the export's seats (_19) and door cards (_23) come out light grey; tint them to black leather
+  materialOverrides: {
+    Steeringwheelcarbon11Mtl_19: { tint: '#1d1d20', roughness: 0.58, metalness: 0.05 },
+    Steeringwheelcarbon11Mtl_23: { tint: '#242427', roughness: 0.62, metalness: 0.05 },
+  },
   wheelNodes: O(114, 115, 123, 71, 72, 91, 122),     // four wheels spread over six meshes -> split per side AND per axle at load (axleCutX)
   axleCutX: 0.1,
   regionNodes: [...M3_PAINT, ...M3_SHELL],
@@ -169,6 +177,7 @@ const GLTF_F40 = {
   paintMaterials: ['material'],
   glassMaterials: ['F40_Glass', 'F40_Glass.001', 'F40_Window', 'F40_Window.001'],
   lightMaterials: ['super_headlight'],
+  lamps: { super_headlight: 'head', F40_Headlights: { kind: 'head', strength: 0.35 }, super_brakelight: 'tail', super_signal_L: 'auto' },
   wheelNodes: F(37, 38, 39, 40, 30, 31, 11),     // tyres (one mesh each) + rims + brake discs/calipers (all four wheels) -> one unit per wheel
   axleCutX: 0,
   regionNodes: F(9, 10),
